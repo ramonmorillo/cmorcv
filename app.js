@@ -2,13 +2,14 @@
    - Patients, Visits, Interventions
    - Stratification variables per visit (prefill from last visit)
    - Cutoffs fixed: >=23 => Level 1, >=17 => Level 2, else Level 3
+   - Overrides: Pregnancy (Prioridad 1) => Level 1 regardless of score
    - Hospital drugs list (PCSK9)
    - Export CSV + Backup JSON + Import JSON
    - Modern UI + LDL chart (canvas) no external libs
 */
 
 const APP = {
-  schemaVersion: "CMO-REGISTRY-1.1",
+  schemaVersion: "CMO-REGISTRY-1.2",
   dbName: "cmo_registry_db",
   dbVersion: 1,
   stores: {
@@ -46,41 +47,254 @@ const APP = {
     level2: 17,
   },
 
-  /* ====== IMPORTANTE ======
-     Sustituye este modelo de ejemplo por TU tabla real de estratificación.
-     Estructura:
-       - id: string único
-       - label: texto
-       - type: "choice"
-       - options: [{ value, label, points }]
-     Puedes crear tantas variables como necesites.
-  */
+  // ===== Estratificación: variables + puntos (según tu copia-pega) =====
   stratificationModel: [
+    // ========= VARIABLES DEMOGRÁFICAS =========
     {
-      id: "example_1",
-      label: "Ejemplo (REEMPLAZAR): LDL sobre objetivo",
+      id: "age_group",
+      label: "Edad",
+      type: "choice",
+      options: [
+        { value: "lt18", label: "Edad <18 años (usar modelo pediátrico)", points: 0 },
+        { value: "19_49", label: "19–49 años", points: 0 },
+        { value: "50_69", label: "50–69 años", points: 2 },
+        { value: "ge70", label: "≥70 años", points: 3 },
+      ],
+    },
+
+    // Embarazo: Prioridad 1 (override a Nivel 1)
+    {
+      id: "pregnancy_priority1",
+      label: "Embarazo (Prioridad 1)",
+      type: "choice",
+      options: [
+        { value: "no", label: "No", points: 0 },
+        { value: "yes", label: "Sí (Prioridad 1)", points: 0 },
+      ],
+      overrides: { ifValue: "yes", level: 1 },
+    },
+
+    {
+      id: "bmi_group",
+      label: "Peso/Estado nutricional (IMC)",
+      type: "choice",
+      options: [
+        { value: "malnutrition", label: "Desnutrición (IMC <18,4)", points: 1 },
+        { value: "normal", label: "Normal (18,5–24,9)", points: 0 },
+        { value: "overweight", label: "Sobrepeso (25–30)", points: 1 },
+        { value: "obesity", label: "Obesidad (>30 y <40)", points: 2 },
+        { value: "severe_obesity", label: "Obesidad grave (>40)", points: 3 },
+      ],
+    },
+
+    {
+      id: "female_highrisk_cv_pathology",
+      label: "Sexo: mujer con FA / HT pulmonar (<45 o edad fértil) / cardiopatía isquémica",
+      type: "choice",
+      options: [
+        { value: "no", label: "No", points: 0 },
+        { value: "yes", label: "Sí", points: 1 },
+      ],
+    },
+
+    // ========= VARIABLES CLÍNICAS =========
+    {
+      id: "high_risk_base_cv_pathology",
+      label:
+        "Patología CV de base de mayor riesgo (FA / HT pulmonar / IC / prevención secundaria ECV aterosclerótica / SCA / trasplante cardiaco)",
+      type: "choice",
+      options: [
+        { value: "no", label: "No", points: 0 },
+        { value: "yes", label: "Sí", points: 1 },
+      ],
+    },
+
+    {
+      id: "cv_comorbidity_at_least_one",
+      label:
+        "Comorbilidad cardiovascular: ≥1 patología CV adicional (amiloidosis, CI/EAC/IAM previo, valvulopatía, EAP, FA, HT pulmonar, ictus, IC)",
       type: "choice",
       options: [
         { value: "no", label: "No", points: 0 },
         { value: "yes", label: "Sí", points: 2 },
       ],
     },
+
     {
-      id: "example_2",
-      label: "Ejemplo (REEMPLAZAR): Ingreso/urgencias último año",
+      id: "combo_ic_ci",
+      label: "Combinación: insuficiencia cardiaca + cardiopatía isquémica",
       type: "choice",
       options: [
         { value: "no", label: "No", points: 0 },
         { value: "yes", label: "Sí", points: 3 },
       ],
     },
+
     {
-      id: "example_3",
-      label: "Ejemplo (REEMPLAZAR): Polimedicación",
+      id: "combo_ic_fa",
+      label: "Combinación: insuficiencia cardiaca + fibrilación auricular",
+      type: "choice",
+      options: [
+        { value: "no", label: "No", points: 0 },
+        { value: "yes", label: "Sí", points: 3 },
+      ],
+    },
+
+    {
+      id: "noncv_comorbidity_at_least_one",
+      label:
+        "Comorbilidad NO cardiovascular: ≥1 (anemia, SAOS, inflamatorias/linfopenia, EPOC, VIH, cáncer activo, ERC TFGe<60, DM1/DM2)",
+      type: "choice",
+      options: [
+        { value: "no", label: "No", points: 0 },
+        { value: "yes", label: "Sí", points: 1 },
+      ],
+    },
+
+    {
+      id: "ldl_above_target",
+      label: "Dislipemia: LDL por encima de objetivos (según riesgo)",
+      type: "choice",
+      options: [
+        { value: "no", label: "No (en objetivo)", points: 0 },
+        { value: "yes", label: "Sí (por encima de objetivo)", points: 2 },
+      ],
+    },
+
+    {
+      id: "lvef_lt40",
+      label: "Gravedad: FEVI <40%",
+      type: "choice",
+      options: [
+        { value: "no", label: "No", points: 0 },
+        { value: "yes", label: "Sí", points: 1 },
+      ],
+    },
+
+    {
+      id: "venous_thromboembolism",
+      label: "Gravedad: tromboembolismo venoso",
+      type: "choice",
+      options: [
+        { value: "no", label: "No", points: 0 },
+        { value: "yes", label: "Sí", points: 1 },
+      ],
+    },
+
+    {
+      id: "hypertension",
+      label: "Hipertensión arterial: PAS ≥140 / PAD ≥90 o en tratamiento antihipertensivo por HTA",
       type: "choice",
       options: [
         { value: "no", label: "No", points: 0 },
         { value: "yes", label: "Sí", points: 2 },
+      ],
+    },
+
+    {
+      id: "utilization_high",
+      label:
+        "Ingresos/urgencias último año por patología: ≥2 hospitalizaciones y/o ≥3 urgencias relacionadas",
+      type: "choice",
+      options: [
+        { value: "no", label: "No", points: 0 },
+        { value: "yes", label: "Sí", points: 2 },
+      ],
+    },
+
+    {
+      id: "first_year_post_coronary_event",
+      label: "Primer año tras evento coronario/revascularización (≤12 meses)",
+      type: "choice",
+      options: [
+        { value: "no", label: "No", points: 0 },
+        { value: "yes", label: "Sí", points: 2 },
+      ],
+    },
+
+    // ========= VARIABLES FARMACOTERAPÉUTICAS =========
+    {
+      id: "significant_med_changes",
+      label: "Cambios significativos en el régimen regular desde la última visita de AF",
+      type: "choice",
+      options: [
+        { value: "no", label: "No", points: 0 },
+        { value: "yes", label: "Sí", points: 1 },
+      ],
+    },
+
+    {
+      id: "complex_regimen",
+      label: "Complejidad del régimen: ≥1 medicamento con pautas complejas (p.ej. MRCI elevado)",
+      type: "choice",
+      options: [
+        { value: "no", label: "No", points: 0 },
+        { value: "yes", label: "Sí", points: 1 },
+      ],
+    },
+
+    {
+      id: "high_alert_meds_ismp",
+      label: "Medicamentos de alto riesgo (ISMP España)",
+      type: "choice",
+      options: [
+        { value: "no", label: "No", points: 0 },
+        { value: "yes", label: "Sí", points: 4 },
+      ],
+    },
+
+    {
+      id: "pharmaco_goals_met",
+      label: "Objetivos farmacoterapéuticos alcanzados (incluye comorbilidades)",
+      type: "choice",
+      options: [
+        { value: "no", label: "No (no alcanzados / o sin objetivos previos)", points: 2 },
+        { value: "yes", label: "Sí (alcanzados)", points: 0 },
+      ],
+    },
+
+    {
+      id: "polypharmacy_level",
+      label: "Polimedicación (principios activos crónicos concurrentes)",
+      type: "choice",
+      options: [
+        { value: "lt7", label: "<7", points: 0 },
+        { value: "7_10", label: "7–10", points: 1 },
+        { value: "ge10", label: "≥10", points: 2 },
+      ],
+    },
+
+    {
+      id: "adherence_status",
+      label: "Sospecha o falta de adherencia",
+      type: "choice",
+      options: [
+        { value: "adherent", label: "Adherente", points: 0 },
+        { value: "risk", label: "Riesgo de falta de adherencia/persistencia subóptima", points: 1 },
+        { value: "nonadherent", label: "Falta de adherencia", points: 2 },
+      ],
+    },
+
+    // ========= VARIABLES SOCIOSANITARIAS =========
+    {
+      id: "physical_activity",
+      label: "Actividad física",
+      type: "choice",
+      options: [
+        { value: "normal", label: "No (actividad habitual)", points: 0 },
+        { value: "sedentary", label: "Sedentario", points: 1 },
+        { value: "elite", label: "Intensa (deportista élite)", points: 1 },
+      ],
+    },
+
+    {
+      id: "tobacco",
+      label: "Tabaco",
+      type: "choice",
+      options: [
+        { value: "no", label: "No fumador / exfumador >5 años", points: 0 },
+        { value: "ex_lt5y", label: "Exfumador en últimos 5 años", points: 1 },
+        { value: "current", label: "Fumador activo", points: 2 },
       ],
     },
   ],
@@ -257,17 +471,13 @@ function makeInterventionId(visitId, idx) {
 // ---------------- Core queries ----------------
 
 function patientLastVisit(patientId) {
-  const visits = APP.state.visits.filter(v => v.patientId === patientId);
-  visits.sort((a,b) => (a.date > b.date ? -1 : 1));
+  const visits = APP.state.visits.filter((v) => v.patientId === patientId);
+  visits.sort((a, b) => (a.date > b.date ? -1 : 1));
   return visits[0] || null;
 }
 
-function patientInterventions(patientId) {
-  return APP.state.interventions.filter(i => i.patientId === patientId);
-}
-
 function visitInterventions(visitId) {
-  return APP.state.interventions.filter(i => i.visitId === visitId);
+  return APP.state.interventions.filter((i) => i.visitId === visitId);
 }
 
 function fmtDate(d) {
@@ -282,18 +492,26 @@ function levelFromScore(score) {
   return 3;
 }
 
-function levelLabel(level) {
-  if (!level) return "—";
-  return `Nivel ${level}`;
+function levelFromScoreWithOverrides(score, selections) {
+  // Overrides (ej: embarazo prioridad 1)
+  for (const v of APP.stratificationModel) {
+    if (!v.overrides) continue;
+    const chosen = selections?.[v.id];
+    if (chosen === undefined) continue;
+    if (String(chosen) === String(v.overrides.ifValue)) {
+      return v.overrides.level; // e.g., 1
+    }
+  }
+  return levelFromScore(score);
 }
 
 // ---------------- UI: Navigation ----------------
 
 function setView(viewId) {
-  $$(".view").forEach(v => v.classList.add("hidden"));
+  $$(".view").forEach((v) => v.classList.add("hidden"));
   $(`#${viewId}`).classList.remove("hidden");
 
-  $$(".navBtn").forEach(b => b.classList.remove("active"));
+  $$(".navBtn").forEach((b) => b.classList.remove("active"));
   $(`.navBtn[data-view="${viewId}"]`).classList.add("active");
 
   const titleMap = {
@@ -314,18 +532,19 @@ function setView(viewId) {
 function fillConditionSelectors() {
   const filter = $("#conditionFilter");
   const current = filter.value;
-  filter.innerHTML = `<option value="">Todas las patologías</option>` +
-    APP.conditionList.map(c => `<option value="${c}">${c}</option>`).join("");
+  filter.innerHTML =
+    `<option value="">Todas las patologías</option>` +
+    APP.conditionList.map((c) => `<option value="${c}">${c}</option>`).join("");
   if (APP.conditionList.includes(current)) filter.value = current;
 
   const sel = $("#p_condition");
-  sel.innerHTML = `<option value="">—</option>` +
-    APP.conditionList.map(c => `<option value="${c}">${c}</option>`).join("");
+  sel.innerHTML =
+    `<option value="">—</option>` + APP.conditionList.map((c) => `<option value="${c}">${c}</option>`).join("");
 }
 
 function fillHospitalDrugs() {
   const sel = $("#v_hospDrug");
-  sel.innerHTML = APP.hospitalDrugs.map(d => `<option value="${d}">${d}</option>`).join("");
+  sel.innerHTML = APP.hospitalDrugs.map((d) => `<option value="${d}">${d}</option>`).join("");
 }
 
 // ---------------- Stats ----------------
@@ -334,13 +553,13 @@ function updateStats() {
   const patients = APP.state.patients;
   $("#patientsCount").textContent = String(patients.length);
 
-  const active = patients.filter(p => p.status !== "inactive").length;
+  const active = patients.filter((p) => p.status !== "inactive").length;
   $("#statActive").textContent = String(active);
 
-  const withVisits = patients.filter(p => patientLastVisit(p.patientId)).length;
+  const withVisits = patients.filter((p) => patientLastVisit(p.patientId)).length;
   $("#statWithVisits").textContent = String(withVisits);
 
-  dbGetMeta("lastBackupAt").then(v => {
+  dbGetMeta("lastBackupAt").then((v) => {
     $("#statLastBackup").textContent = v ? String(v) : "—";
   });
 }
@@ -350,9 +569,9 @@ function matchesSearch(p, q) {
   const s = q.toLowerCase();
   const last = patientLastVisit(p.patientId);
   const lastLDL = last?.ldl ?? "";
-  return [
-    p.patientId, p.prevalentCondition, p.sex, p.birthYear, p.notes, p.comorbidities, lastLDL
-  ].some(x => String(x ?? "").toLowerCase().includes(s));
+  return [p.patientId, p.prevalentCondition, p.sex, p.birthYear, p.notes, p.comorbidities, lastLDL].some((x) =>
+    String(x ?? "").toLowerCase().includes(s)
+  );
 }
 
 function matchesCondition(p, cond) {
@@ -370,14 +589,14 @@ function renderPatientsTable() {
   const cond = $("#conditionFilter").value;
 
   const rows = APP.state.patients
-    .filter(p => matchesSearch(p, q))
-    .filter(p => matchesCondition(p, cond))
-    .map(p => {
+    .filter((p) => matchesSearch(p, q))
+    .filter((p) => matchesCondition(p, cond))
+    .map((p) => {
       const last = patientLastVisit(p.patientId);
       return { p, last };
     });
 
-  for (const {p, last} of rows) {
+  for (const { p, last } of rows) {
     const tr = document.createElement("tr");
 
     const ldl = last?.ldl ?? "—";
@@ -401,7 +620,7 @@ function renderPatientsTable() {
     tbody.appendChild(tr);
   }
 
-  $$('[data-open-patient]').forEach(el => {
+  $$("[data-open-patient]").forEach((el) => {
     el.addEventListener("click", () => openPatient(el.getAttribute("data-open-patient")));
   });
 }
@@ -413,7 +632,7 @@ function openPatient(patientId) {
 
   $("#patientDetailTitle").textContent = `Ficha · ${patientId}`;
 
-  const p = APP.state.patients.find(x => x.patientId === patientId);
+  const p = APP.state.patients.find((x) => x.patientId === patientId);
   if (!p) return;
 
   $("#d_patientId").textContent = p.patientId;
@@ -426,13 +645,14 @@ function openPatient(patientId) {
   const last = patientLastVisit(patientId);
   $("#d_levelNow").textContent = last?.priorityLevel ? `Nivel ${last.priorityLevel}` : "—";
   $("#d_levelWhy").textContent = last?.priorityJustification || "—";
-  $("#d_scoreNow").textContent = (last?.cmoScore ?? "—");
+  $("#d_scoreNow").textContent = last?.cmoScore ?? "—";
 
-  const ldlLast = (last?.ldl ?? null);
+  const ldlLast = last?.ldl ?? null;
   $("#d_ldlLast").textContent = ldlLast === null ? "—" : String(ldlLast);
   const goal = last?.ldlTarget ?? null;
   const ach = last?.ldlGoalAchieved;
-  $("#d_ldlGoal").textContent = goal === null ? "—" : `Objetivo ${goal} · ${ach === true ? "Cumple" : ach === false ? "No cumple" : "—"}`;
+  $("#d_ldlGoal").textContent =
+    goal === null ? "—" : `Objetivo ${goal} · ${ach === true ? "Cumple" : ach === false ? "No cumple" : "—"}`;
 
   renderVisitsTable(patientId);
   drawLDLChart(patientId);
@@ -448,8 +668,8 @@ function renderVisitsTable(patientId) {
   const tbody = $("#visitsTable tbody");
   tbody.innerHTML = "";
 
-  const visits = APP.state.visits.filter(v => v.patientId === patientId);
-  visits.sort((a,b) => (a.date > b.date ? -1 : 1));
+  const visits = APP.state.visits.filter((v) => v.patientId === patientId);
+  visits.sort((a, b) => (a.date > b.date ? -1 : 1));
 
   for (const v of visits) {
     const tr = document.createElement("tr");
@@ -464,7 +684,9 @@ function renderVisitsTable(patientId) {
       <td>${goalTxt}</td>
       <td>${v.cmoScore ?? "—"}</td>
       <td>${v.priorityLevel ? `Nivel ${v.priorityLevel}` : "—"}</td>
-      <td title="${(v.treatment||"").slice(0,160)}">${(v.treatment || "—").slice(0,38)}${(v.treatment||"").length>38 ? "…" : ""}</td>
+      <td title="${(v.treatment || "").slice(0, 160)}">${(v.treatment || "—").slice(0, 38)}${
+      (v.treatment || "").length > 38 ? "…" : ""
+    }</td>
       <td>${v.adherence || "—"}</td>
       <td>${v.ram || "—"}</td>
       <td><span class="link" data-open-visit="${v.visitId}">Ver</span></td>
@@ -472,26 +694,27 @@ function renderVisitsTable(patientId) {
     tbody.appendChild(tr);
   }
 
-  $$('[data-open-visit]').forEach(el => {
+  $$("[data-open-visit]").forEach((el) => {
     el.addEventListener("click", () => openVisitDetail(el.getAttribute("data-open-visit")));
   });
 }
 
 function openVisitDetail(visitId) {
   APP.state.selectedVisitId = visitId;
-  const v = APP.state.visits.find(x => x.visitId === visitId);
+  const v = APP.state.visits.find((x) => x.visitId === visitId);
   if (!v) return;
 
   $("#vd_header").textContent = `${v.patientId} · ${v.date}`;
 
   const kv = $("#vd_kv");
-  const scoreTxt = v.cmoScore ?? "—";
   kv.innerHTML = `
     <div class="k">Fármaco hospitalario</div><div class="v">${v.hospitalDrug || "—"}</div>
     <div class="k">LDL</div><div class="v">${v.ldl ?? "—"}</div>
     <div class="k">Objetivo LDL</div><div class="v">${v.ldlTarget ?? "—"}</div>
-    <div class="k">¿Cumple objetivo?</div><div class="v">${v.ldlGoalAchieved === true ? "Sí" : v.ldlGoalAchieved === false ? "No" : "—"}</div>
-    <div class="k">Score</div><div class="v">${scoreTxt}</div>
+    <div class="k">¿Cumple objetivo?</div><div class="v">${
+      v.ldlGoalAchieved === true ? "Sí" : v.ldlGoalAchieved === false ? "No" : "—"
+    }</div>
+    <div class="k">Score</div><div class="v">${v.cmoScore ?? "—"}</div>
     <div class="k">Nivel</div><div class="v">${v.priorityLevel ? `Nivel ${v.priorityLevel}` : "—"}</div>
     <div class="k">Justificación</div><div class="v">${v.priorityJustification || "—"}</div>
     <div class="k">Tratamiento (texto)</div><div class="v">${v.treatment || "—"}</div>
@@ -506,7 +729,8 @@ function openVisitDetail(visitId) {
   cont.innerHTML = ints.length ? "" : `<span class="smallMuted">Sin intervenciones registradas.</span>`;
   for (const i of ints) {
     const chip = document.createElement("span");
-    chip.className = "chip " + (i.status === "accepted" ? "ok" : i.status === "rejected" ? "no" : "wait");
+    chip.className =
+      "chip " + (i.status === "accepted" ? "ok" : i.status === "rejected" ? "no" : "wait");
     const st = i.status === "accepted" ? "✅" : i.status === "rejected" ? "❌" : "⏳";
     chip.textContent = `${st} ${i.cmoDimension} · ${i.description}`;
     cont.appendChild(chip);
@@ -523,56 +747,64 @@ function drawLDLChart(patientId) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   const visits = APP.state.visits
-    .filter(v => v.patientId === patientId && v.ldl !== null && v.ldl !== undefined)
+    .filter((v) => v.patientId === patientId && v.ldl !== null && v.ldl !== undefined)
     .slice()
-    .sort((a,b) => (a.date > b.date ? 1 : -1));
+    .sort((a, b) => (a.date > b.date ? 1 : -1));
 
-  const W = canvas.width, H = canvas.height;
+  const W = canvas.width,
+    H = canvas.height;
   ctx.fillStyle = "rgba(255,255,255,0.02)";
-  ctx.fillRect(0,0,W,H);
+  ctx.fillRect(0, 0, W, H);
 
-  const padL = 50, padR = 18, padT = 14, padB = 30;
+  const padL = 50,
+    padR = 18,
+    padT = 14,
+    padB = 30;
   const iw = W - padL - padR;
   const ih = H - padT - padB;
 
   ctx.strokeStyle = "rgba(255,255,255,0.08)";
   ctx.lineWidth = 1;
-  for (let i=0;i<=5;i++){
-    const y = padT + (ih*i/5);
+  for (let i = 0; i <= 5; i++) {
+    const y = padT + (ih * i) / 5;
     ctx.beginPath();
     ctx.moveTo(padL, y);
-    ctx.lineTo(W-padR, y);
+    ctx.lineTo(W - padR, y);
     ctx.stroke();
   }
 
   if (visits.length < 2) {
     ctx.fillStyle = "rgba(231,238,252,0.75)";
     ctx.font = "14px system-ui";
-    ctx.fillText(visits.length === 1 ? "1 punto registrado (añade otra visita para ver tendencia)" : "Sin LDL longitudinal aún", padL, padT+22);
+    ctx.fillText(
+      visits.length === 1 ? "1 punto registrado (añade otra visita para ver tendencia)" : "Sin LDL longitudinal aún",
+      padL,
+      padT + 22
+    );
     return;
   }
 
-  const values = visits.map(v => Number(v.ldl)).filter(n => Number.isFinite(n));
+  const values = visits.map((v) => Number(v.ldl)).filter((n) => Number.isFinite(n));
   const minV = Math.min(...values);
   const maxV = Math.max(...values);
   const range = Math.max(10, maxV - minV);
 
-  const yMin = Math.max(0, minV - range*0.15);
-  const yMax = maxV + range*0.15;
+  const yMin = Math.max(0, minV - range * 0.15);
+  const yMax = maxV + range * 0.15;
 
   ctx.fillStyle = "rgba(231,238,252,0.70)";
   ctx.font = "12px system-ui";
-  for (let i=0;i<=5;i++){
-    const y = padT + (ih*i/5);
-    const val = (yMax - (yMax-yMin)*i/5);
-    ctx.fillText(String(Math.round(val)), 8, y+4);
+  for (let i = 0; i <= 5; i++) {
+    const y = padT + (ih * i) / 5;
+    const val = yMax - ((yMax - yMin) * i) / 5;
+    ctx.fillText(String(Math.round(val)), 8, y + 4);
   }
 
   const n = visits.length;
   const points = visits.map((v, idx) => {
-    const x = padL + (iw*idx/(n-1));
+    const x = padL + (iw * idx) / (n - 1);
     const val = Number(v.ldl);
-    const y = padT + (ih*(1 - (val - yMin)/(yMax - yMin)));
+    const y = padT + ih * (1 - (val - yMin) / (yMax - yMin));
     return { x, y, date: v.date, ldl: val };
   });
 
@@ -580,32 +812,36 @@ function drawLDLChart(patientId) {
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(points[0].x, points[0].y);
-  for (let i=1;i<points.length;i++) ctx.lineTo(points[i].x, points[i].y);
+  for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
   ctx.stroke();
 
   ctx.fillStyle = "rgba(88,211,162,0.95)";
   for (const p of points) {
     ctx.beginPath();
-    ctx.arc(p.x, p.y, 3.2, 0, Math.PI*2);
+    ctx.arc(p.x, p.y, 3.2, 0, Math.PI * 2);
     ctx.fill();
   }
 
-  const idxs = [0, Math.floor((n-1)/2), n-1].filter((v,i,a)=>a.indexOf(v)===i);
+  const idxs = [0, Math.floor((n - 1) / 2), n - 1].filter((v, i, a) => a.indexOf(v) === i);
   ctx.fillStyle = "rgba(231,238,252,0.65)";
   ctx.font = "11px system-ui";
   for (const idx of idxs) {
     const p = points[idx];
-    ctx.fillText(p.date, Math.max(padL, Math.min(p.x-28, W-padR-70)), H-10);
+    ctx.fillText(p.date, Math.max(padL, Math.min(p.x - 28, W - padR - 70)), H - 10);
   }
 }
 
 // ---------------- Modal helpers ----------------
 
-function openModal(id) { $(`#${id}`).classList.remove("hidden"); }
-function closeModal(id) { $(`#${id}`).classList.add("hidden"); }
+function openModal(id) {
+  $(`#${id}`).classList.remove("hidden");
+}
+function closeModal(id) {
+  $(`#${id}`).classList.add("hidden");
+}
 
 function bindModalClose() {
-  $$("[data-close]").forEach(el => {
+  $$("[data-close]").forEach((el) => {
     el.addEventListener("click", () => closeModal(el.getAttribute("data-close")));
   });
 }
@@ -647,7 +883,7 @@ async function savePatient() {
     schemaVersion: APP.schemaVersion,
   };
 
-  const exists = APP.state.patients.some(x => x.patientId === patientId);
+  const exists = APP.state.patients.some((x) => x.patientId === patientId);
   if (exists) return toast("Ese ID ya existe.");
 
   await dbPut(APP.stores.patients, p);
@@ -666,14 +902,6 @@ function buildStratVarsPicker(defaultValues = {}) {
   const container = $("#stratVarsPicker");
   container.innerHTML = "";
 
-  // Nota visual para evitar “olvidar” que está en placeholder
-  if (APP.stratificationModel.some(v => v.id.startsWith("example_"))) {
-    const warn = document.createElement("div");
-    warn.className = "smallMuted";
-    warn.innerHTML = "<b>AVISO:</b> Modelo de estratificación en modo ejemplo. Sustituye APP.stratificationModel por tu tabla real.";
-    container.appendChild(warn);
-  }
-
   for (const v of APP.stratificationModel) {
     const row = document.createElement("div");
     row.className = "intervRow";
@@ -684,11 +912,10 @@ function buildStratVarsPicker(defaultValues = {}) {
     sel.className = "select";
     sel.setAttribute("data-strat-sel", "1");
 
-    sel.innerHTML = `<option value="">—</option>` + v.options
-      .map(o => `<option value="${o.value}">${o.label} (${o.points})</option>`)
-      .join("");
+    sel.innerHTML =
+      `<option value="">—</option>` +
+      v.options.map((o) => `<option value="${o.value}">${o.label} (${o.points})</option>`).join("");
 
-    // prefill
     if (defaultValues && defaultValues[v.id] !== undefined && defaultValues[v.id] !== null) {
       sel.value = String(defaultValues[v.id]);
     }
@@ -734,7 +961,7 @@ function computeStratScore(selections) {
   for (const v of APP.stratificationModel) {
     const chosen = selections[v.id];
     if (chosen === undefined) continue;
-    const opt = v.options.find(o => String(o.value) === String(chosen));
+    const opt = v.options.find((o) => String(o.value) === String(chosen));
     if (opt) total += Number(opt.points || 0);
   }
   return total;
@@ -745,10 +972,10 @@ function updateStratScoreUI() {
   const rows = Array.from($("#stratVarsPicker").querySelectorAll(".intervRow"));
   for (const r of rows) {
     const id = r.dataset.varId;
-    const sel = r.querySelector('[data-strat-sel]');
-    const ptsEl = r.querySelector('[data-strat-pts]');
-    const varDef = APP.stratificationModel.find(v => v.id === id);
-    const opt = varDef?.options?.find(o => String(o.value) === String(sel.value));
+    const sel = r.querySelector("[data-strat-sel]");
+    const ptsEl = r.querySelector("[data-strat-pts]");
+    const varDef = APP.stratificationModel.find((v) => v.id === id);
+    const opt = varDef?.options?.find((o) => String(o.value) === String(sel.value));
     const pts = opt ? Number(opt.points || 0) : 0;
     ptsEl.textContent = `${pts} pts`;
   }
@@ -757,8 +984,9 @@ function updateStratScoreUI() {
 }
 
 function autoFillLevelFromScore() {
+  const selections = getStratSelections();
   const score = safeNum($("#v_score").value) ?? 0;
-  const lvl = levelFromScore(score);
+  const lvl = levelFromScoreWithOverrides(score, selections);
   $("#v_levelAuto").value = `Nivel ${lvl}`;
 }
 
@@ -843,7 +1071,6 @@ function resetVisitForm(defaults = {}) {
   buildStratVarsPicker(defaults.stratVars || {});
   buildInterventionsPicker();
 
-  // Pre-fill some fields from previous visit if provided
   if (defaults.hospitalDrug) $("#v_hospDrug").value = defaults.hospitalDrug;
   if (defaults.ldlTarget !== undefined && defaults.ldlTarget !== null) $("#v_ldlTarget").value = String(defaults.ldlTarget);
   if (defaults.treatment) $("#v_treatment").value = defaults.treatment;
@@ -860,7 +1087,7 @@ function getDefaultsFromLastVisit(patientId) {
     treatment: last.treatment ?? null,
     adherence: last.adherence ?? null,
     ram: last.ram ?? null,
-    stratVars: last.stratVars || {}, // <-- precarga variables
+    stratVars: last.stratVars || {}, // precarga variables
   };
 }
 
@@ -869,21 +1096,22 @@ function generateHCText(patient, visit, interventions) {
   lines.push(`Paciente ${patient.patientId} · Patología prevalente: ${patient.prevalentCondition || "—"}`);
   lines.push(`Fecha visita: ${visit.date || "—"}`);
   lines.push(`Fármaco hospitalario: ${visit.hospitalDrug || "—"}`);
-  lines.push(`LDL: ${visit.ldl ?? "—"} mg/dL · Objetivo: ${visit.ldlTarget ?? "—"} mg/dL · Cumple: ${
-    visit.ldlGoalAchieved === true ? "Sí" : visit.ldlGoalAchieved === false ? "No" : "—"
-  }`);
+  lines.push(
+    `LDL: ${visit.ldl ?? "—"} mg/dL · Objetivo: ${visit.ldlTarget ?? "—"} mg/dL · Cumple: ${
+      visit.ldlGoalAchieved === true ? "Sí" : visit.ldlGoalAchieved === false ? "No" : "—"
+    }`
+  );
   lines.push(`Tratamiento (texto): ${visit.treatment || "—"}`);
   lines.push(`Adherencia: ${visit.adherence || "—"} · RAM: ${visit.ram || "—"}`);
 
   lines.push(`Estratificación: Score ${visit.cmoScore ?? "—"} · Nivel ${visit.priorityLevel ?? "—"} · ${visit.priorityJustification || "—"}`);
 
-  // Variables (detalle)
   if (visit.stratVars && Object.keys(visit.stratVars).length) {
     lines.push(`Variables estratificación (selección):`);
     for (const v of APP.stratificationModel) {
       const val = visit.stratVars[v.id];
       if (val === undefined) continue;
-      const opt = v.options.find(o => String(o.value) === String(val));
+      const opt = v.options.find((o) => String(o.value) === String(val));
       const txt = opt ? `${opt.label} (${opt.points})` : String(val);
       lines.push(`- ${v.label}: ${txt}`);
     }
@@ -906,19 +1134,20 @@ function generateHCText(patient, visit, interventions) {
 function generateHCFromForm() {
   const patientId = APP.state.selectedPatientId;
   if (!patientId) return toast("Selecciona un paciente.");
-  const patient = APP.state.patients.find(p => p.patientId === patientId);
+  const patient = APP.state.patients.find((p) => p.patientId === patientId);
   if (!patient) return toast("Paciente no encontrado.");
 
   const stratVars = getStratSelections();
   const score = computeStratScore(stratVars);
-  const lvl = levelFromScore(score);
+  const lvl = levelFromScoreWithOverrides(score, stratVars);
 
   const visit = {
     date: $("#v_date").value || "—",
     hospitalDrug: $("#v_hospDrug").value || "—",
     ldl: safeNum($("#v_ldl").value),
     ldlTarget: safeNum($("#v_ldlTarget").value),
-    ldlGoalAchieved: $("#v_goalAch").value === "true" ? true : $("#v_goalAch").value === "false" ? false : null,
+    ldlGoalAchieved:
+      $("#v_goalAch").value === "true" ? true : $("#v_goalAch").value === "false" ? false : null,
     treatment: ($("#v_treatment").value || "").trim() || null,
     adherence: ($("#v_adherence").value || "").trim() || null,
     ram: ($("#v_ram").value || "").trim() || null,
@@ -936,8 +1165,7 @@ function generateHCFromForm() {
   $("#v_score").value = String(score);
   $("#v_levelAuto").value = `Nivel ${lvl}`;
 
-  const text = generateHCText(patient, visit, interventions);
-  $("#v_hcText").value = text;
+  $("#v_hcText").value = generateHCText(patient, visit, interventions);
   toast("Texto HC generado.");
 }
 
@@ -961,7 +1189,7 @@ async function saveVisit() {
 
   const stratVars = getStratSelections();
   const score = computeStratScore(stratVars);
-  const priorityLevel = levelFromScore(score);
+  const priorityLevel = levelFromScoreWithOverrides(score, stratVars);
 
   const ldl = safeNum($("#v_ldl").value);
   const ldlTarget = safeNum($("#v_ldlTarget").value);
@@ -981,9 +1209,9 @@ async function saveVisit() {
     adherence: ($("#v_adherence").value || "").trim() || null,
     ram: ($("#v_ram").value || "").trim() || null,
 
-    stratVars,      // <-- variables guardadas por visita
-    cmoScore: score, // <-- score calculado
-    priorityLevel,  // <-- nivel calculado con cortes fijos
+    stratVars,
+    cmoScore: score,
+    priorityLevel,
     priorityJustification: ($("#v_levelWhy").value || "").trim() || null,
 
     oftObjectives: ($("#v_oft").value || "").trim() || null,
@@ -1010,22 +1238,21 @@ async function saveVisit() {
   toast("Visita guardada.");
 }
 
-// delete visit (+ interventions)
 async function deleteSelectedVisit() {
   const visitId = APP.state.selectedVisitId;
   if (!visitId) return;
 
-  const v = APP.state.visits.find(x => x.visitId === visitId);
+  const v = APP.state.visits.find((x) => x.visitId === visitId);
   if (!v) return;
 
   if (!confirm("¿Eliminar esta visita y sus intervenciones?")) return;
 
   const ints = visitInterventions(visitId);
   for (const i of ints) await dbDelete(APP.stores.interventions, i.interventionId);
-  APP.state.interventions = APP.state.interventions.filter(i => i.visitId !== visitId);
+  APP.state.interventions = APP.state.interventions.filter((i) => i.visitId !== visitId);
 
   await dbDelete(APP.stores.visits, visitId);
-  APP.state.visits = APP.state.visits.filter(x => x.visitId !== visitId);
+  APP.state.visits = APP.state.visits.filter((x) => x.visitId !== visitId);
 
   closeModal("modalVisitDetail");
   toast("Visita eliminada.");
@@ -1036,7 +1263,7 @@ async function deleteSelectedVisit() {
 // ---------------- Export / Backup ----------------
 
 function patientsForCSV() {
-  return APP.state.patients.map(p => ({
+  return APP.state.patients.map((p) => ({
     patientId: p.patientId,
     prevalentCondition: p.prevalentCondition ?? "",
     sex: p.sex ?? "",
@@ -1050,7 +1277,7 @@ function patientsForCSV() {
 }
 
 function visitsForCSV() {
-  return APP.state.visits.map(v => ({
+  return APP.state.visits.map((v) => ({
     visitId: v.visitId,
     patientId: v.patientId,
     date: v.date ?? "",
@@ -1073,7 +1300,7 @@ function visitsForCSV() {
 }
 
 function interventionsForCSV() {
-  return APP.state.interventions.map(i => ({
+  return APP.state.interventions.map((i) => ({
     interventionId: i.interventionId,
     patientId: i.patientId,
     visitId: i.visitId,
@@ -1116,7 +1343,7 @@ async function backupJSON() {
     visits: APP.state.visits,
     interventions: APP.state.interventions,
   };
-  downloadText(`backup_${new Date().toISOString().slice(0,10)}.json`, JSON.stringify(payload, null, 2), "application/json;charset=utf-8");
+  downloadText(`backup_${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(payload, null, 2), "application/json;charset=utf-8");
   const when = new Date().toISOString();
   await dbSetMeta("lastBackupAt", when);
   updateStats();
@@ -1158,7 +1385,7 @@ async function loadAll() {
 }
 
 function bindNav() {
-  $$(".navBtn").forEach(btn => {
+  $$(".navBtn").forEach((btn) => {
     btn.addEventListener("click", () => setView(btn.dataset.view));
   });
 }
@@ -1189,8 +1416,8 @@ function bindPatientsUI() {
   $("#btnGenerateHC").addEventListener("click", generateHCFromForm);
   $("#btnCopyHC").addEventListener("click", copyHC);
 
-  // LDL / objetivo changes can impact clinical status but not score (score is from table)
-  ["#v_ldl", "#v_ldlTarget", "#v_goalAch", "#v_hospDrug"].forEach(sel => {
+  // no-op hooks (por si luego quieres lógica automática)
+  ["#v_ldl", "#v_ldlTarget", "#v_goalAch", "#v_hospDrug"].forEach((sel) => {
     const el = $(sel);
     if (el) el.addEventListener("change", () => {});
   });
