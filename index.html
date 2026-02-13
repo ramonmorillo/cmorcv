@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>CMO Registry — Consultas Externas</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="logo">CMO</div>
+        <div class="brandText">
+          <div class="brandTitle">CMO Registry</div>
+          <div class="brandSub">Consultas externas · Local-first</div>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <button class="navBtn active" data-view="patientsView">
+          <span class="navIcon">👥</span><span>Pacientes</span>
+        </button>
+        <button class="navBtn" data-view="exportsView">
+          <span class="navIcon">📤</span><span>Exportación</span>
+        </button>
+        <button class="navBtn" data-view="aboutView">
+          <span class="navIcon">🧩</span><span>Ayuda</span>
+        </button>
+      </nav>
+
+      <div class="sidebarFooter">
+        <div class="smallMuted">Datos guardados localmente (IndexedDB).</div>
+        <div class="smallMuted">Recomendado: backup periódico.</div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="topbarLeft">
+          <div class="pageTitle" id="pageTitle">Pacientes</div>
+          <div class="pageHint" id="pageHint">Registro longitudinal con CMO + exportación para investigación</div>
+        </div>
+
+        <div class="topbarRight">
+          <button class="btn ghost" id="btnQuickBackup" title="Backup JSON (recomendado)">
+            ⬇️ Backup
+          </button>
+          <button class="btn" id="btnNewPatient">+ Nuevo paciente</button>
+        </div>
+      </header>
+
+      <!-- Alerts -->
+      <div id="toast" class="toast hidden"></div>
+
+      <!-- Views -->
+      <section id="patientsView" class="view">
+        <div class="panel">
+          <div class="panelHeader">
+            <div class="panelTitle">Listado</div>
+            <div class="panelActions">
+              <input id="patientSearch" class="input" placeholder="Buscar por ID, patología, notas..." />
+              <select id="conditionFilter" class="select">
+                <option value="">Todas las patologías</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="grid">
+            <div class="card">
+              <div class="cardHeader">
+                <div class="cardTitle">Pacientes</div>
+                <div class="badge" id="patientsCount">0</div>
+              </div>
+              <div class="cardBody">
+                <div class="statRow">
+                  <div class="stat">
+                    <div class="statLabel">Activos</div>
+                    <div class="statValue" id="statActive">0</div>
+                  </div>
+                  <div class="stat">
+                    <div class="statLabel">Con ≥1 visita</div>
+                    <div class="statValue" id="statWithVisits">0</div>
+                  </div>
+                  <div class="stat">
+                    <div class="statLabel">Último backup</div>
+                    <div class="statValue small" id="statLastBackup">—</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card span2">
+              <div class="cardHeader">
+                <div class="cardTitle">Tabla</div>
+                <div class="smallMuted">Click en un paciente para abrir ficha</div>
+              </div>
+              <div class="cardBody">
+                <div class="tableWrap">
+                  <table class="table" id="patientsTable">
+                    <thead>
+                      <tr>
+                        <th>ID</th>
+                        <th>Patología</th>
+                        <th>Sexo</th>
+                        <th>Nac.</th>
+                        <th>Última visita</th>
+                        <th>Nivel</th>
+                        <th>LDL último</th>
+                        <th>Objetivo</th>
+                        <th>Estado</th>
+                      </tr>
+                    </thead>
+                    <tbody></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="grid">
+            <div class="card span3 hidden" id="patientDetailCard">
+              <div class="cardHeader">
+                <div class="cardTitle" id="patientDetailTitle">Ficha</div>
+                <div class="cardActions">
+                  <button class="btn ghost" id="btnBackToList">← Volver</button>
+                  <button class="btn" id="btnNewVisit">+ Nueva visita</button>
+                </div>
+              </div>
+
+              <div class="cardBody">
+                <div class="detailGrid">
+                  <div class="detailSection">
+                    <div class="sectionTitle">Resumen</div>
+                    <div class="kv">
+                      <div class="k">ID</div><div class="v" id="d_patientId">—</div>
+                      <div class="k">Patología</div><div class="v" id="d_condition">—</div>
+                      <div class="k">Sexo</div><div class="v" id="d_sex">—</div>
+                      <div class="k">Año nac.</div><div class="v" id="d_birthYear">—</div>
+                      <div class="k">Comorbilidades</div><div class="v" id="d_comorb">—</div>
+                      <div class="k">Notas</div><div class="v" id="d_notes">—</div>
+                    </div>
+                  </div>
+
+                  <div class="detailSection">
+                    <div class="sectionTitle">Dashboard</div>
+                    <div class="dashRow">
+                      <div class="miniCard">
+                        <div class="miniLabel">Nivel actual</div>
+                        <div class="miniValue" id="d_levelNow">—</div>
+                        <div class="miniHint" id="d_levelWhy">—</div>
+                      </div>
+                      <div class="miniCard">
+                        <div class="miniLabel">LDL último</div>
+                        <div class="miniValue" id="d_ldlLast">—</div>
+                        <div class="miniHint" id="d_ldlGoal">—</div>
+                      </div>
+                      <div class="miniCard">
+                        <div class="miniLabel">Intervenciones</div>
+                        <div class="miniValue" id="d_intervCount">—</div>
+                        <div class="miniHint" id="d_intervMix">—</div>
+                      </div>
+                    </div>
+
+                    <div class="chartWrap">
+                      <canvas id="ldlChart" width="900" height="240"></canvas>
+                      <div class="smallMuted">Evolución LDL (mg/dL). (Gráfico local, sin librerías externas).</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="divider"></div>
+
+                <div class="sectionTitle">Visitas</div>
+                <div class="tableWrap">
+                  <table class="table" id="visitsTable">
+                    <thead>
+                      <tr>
+                        <th>Fecha</th>
+                        <th>LDL</th>
+                        <th>Objetivo</th>
+                        <th>¿Cumple?</th>
+                        <th>Tratamiento</th>
+                        <th>Adherencia</th>
+                        <th>RAM</th>
+                        <th>Nivel</th>
+                        <th>Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <section id="exportsView" class="view hidden">
+        <div class="panel">
+          <div class="panelHeader">
+            <div>
+              <div class="panelTitle">Exportación y copias de seguridad</div>
+              <div class="smallMuted">
+                CSV para Excel (investigación) + Backup JSON completo (migración/restauración).
+              </div>
+            </div>
+          </div>
+
+          <div class="grid">
+            <div class="card">
+              <div class="cardHeader">
+                <div class="cardTitle">CSV (Excel)</div>
+              </div>
+              <div class="cardBody">
+                <div class="btnRow">
+                  <button class="btn" id="btnExportPatientsCSV">Export patients.csv</button>
+                  <button class="btn" id="btnExportVisitsCSV">Export visits.csv</button>
+                  <button class="btn" id="btnExportInterventionsCSV">Export interventions.csv</button>
+                </div>
+                <div class="smallMuted">
+                  Formato “largo” recomendado: visitas e intervenciones quedan normalizadas.
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="cardHeader">
+                <div class="cardTitle">Backup JSON</div>
+              </div>
+              <div class="cardBody">
+                <div class="btnRow">
+                  <button class="btn" id="btnBackupJSON">⬇️ Export backup.json</button>
+                  <label class="btn ghost fileBtn">
+                    ⬆️ Importar backup.json
+                    <input type="file" id="fileImportJSON" accept="application/json" />
+                  </label>
+                </div>
+                <div class="smallMuted">
+                  Recomendación: realiza backup periódico (p. ej. semanal) en ubicación corporativa autorizada.
+                </div>
+              </div>
+            </div>
+
+            <div class="card span2">
+              <div class="cardHeader">
+                <div class="cardTitle">Informe PDF (por navegador)</div>
+              </div>
+              <div class="cardBody">
+                <p class="smallMuted">
+                  Para generar PDF “serio”: abre la ficha del paciente y usa el botón del navegador
+                  <b>Imprimir</b> → “Guardar como PDF”. En una siguiente iteración podemos añadir
+                  una plantilla específica.
+                </p>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <section id="aboutView" class="view hidden">
+        <div class="panel">
+          <div class="panelHeader">
+            <div class="panelTitle">Ayuda rápida</div>
+          </div>
+          <div class="card">
+            <div class="cardBody">
+              <ul class="bullets">
+                <li><b>Local-first:</b> los datos se guardan en este navegador (IndexedDB).</li>
+                <li><b>RGPD:</b> usa <b>ID pseudonimizado</b>. No guardes nombre/NIH/telefono.</li>
+                <li><b>Backup:</b> usa “Backup JSON” de forma periódica.</li>
+                <li><b>Investigación:</b> exporta CSV (patients/visits/interventions).</li>
+                <li><b>Intervenciones:</b> cada intervención se registra por visita con estado: accepted/rejected/pending.</li>
+              </ul>
+              <div class="divider"></div>
+              <div class="smallMuted">
+                Nota: el “nivel/prioridad” aquí se registra como 1/2/3. La lógica de cálculo puede integrarse
+                con tu modelo completo; en este MVP se recoge y se puede “autopropone” por reglas simples si quieres.
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Modal: New Patient -->
+      <div class="modal hidden" id="modalPatient">
+        <div class="modalBackdrop" data-close="modalPatient"></div>
+        <div class="modalCard">
+          <div class="modalHeader">
+            <div class="modalTitle">Nuevo paciente</div>
+            <button class="iconBtn" data-close="modalPatient">✕</button>
+          </div>
+          <div class="modalBody">
+            <div class="formGrid">
+              <div class="field">
+                <label>ID pseudónimo *</label>
+                <input class="input" id="p_patientId" placeholder="Ej. PCSK9-000123" />
+                <div class="hint">No usar nombre/NIH.</div>
+              </div>
+
+              <div class="field">
+                <label>Patología prevalente *</label>
+                <select class="select" id="p_condition">
+                  <!-- filled by JS -->
+                </select>
+              </div>
+
+              <div class="field">
+                <label>Sexo</label>
+                <select class="select" id="p_sex">
+                  <option value="">—</option>
+                  <option value="M">M</option>
+                  <option value="F">F</option>
+                  <option value="X">X</option>
+                </select>
+              </div>
+
+              <div class="field">
+                <label>Año de nacimiento</label>
+                <input class="input" id="p_birthYear" inputmode="numeric" placeholder="Ej. 1972" />
+              </div>
+
+              <div class="field span2">
+                <label>Comorbilidades (separadas por coma)</label>
+                <input class="input" id="p_comorb" placeholder="Ej. DM2, ERC, ECV previa..." />
+              </div>
+
+              <div class="field span2">
+                <label>Notas</label>
+                <textarea class="textarea" id="p_notes" rows="3" placeholder="Notas estructurales, barreras estables, etc."></textarea>
+              </div>
+
+              <div class="field">
+                <label>Estado</label>
+                <select class="select" id="p_status">
+                  <option value="active">Activo</option>
+                  <option value="inactive">Inactivo</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <div class="modalFooter">
+            <button class="btn ghost" data-close="modalPatient">Cancelar</button>
+            <button class="btn" id="btnSavePatient">Guardar</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal: New Visit -->
+      <div class="modal hidden" id="modalVisit">
+        <div class="modalBackdrop" data-close="modalVisit"></div>
+        <div class="modalCard modalWide">
+          <div class="modalHeader">
+            <div class="modalTitle">Nueva visita</div>
+            <button class="iconBtn" data-close="modalVisit">✕</button>
+          </div>
+          <div class="modalBody">
+            <div class="smallMuted" id="visitForPatient">—</div>
+
+            <div class="formGrid">
+              <div class="field">
+                <label>Fecha *</label>
+                <input class="input" id="v_date" type="date" />
+              </div>
+
+              <div class="field">
+                <label>LDL (mg/dL)</label>
+                <input class="input" id="v_ldl" inputmode="decimal" placeholder="Ej. 55" />
+              </div>
+
+              <div class="field">
+                <label>Objetivo LDL (mg/dL)</label>
+                <input class="input" id="v_ldlTarget" inputmode="decimal" placeholder="Ej. 55" />
+              </div>
+
+              <div class="field">
+                <label>¿Objetivo alcanzado?</label>
+                <select class="select" id="v_goalAch">
+                  <option value="">—</option>
+                  <option value="true">Sí</option>
+                  <option value="false">No</option>
+                </select>
+              </div>
+
+              <div class="field span2">
+                <label>Tratamiento</label>
+                <input class="input" id="v_treatment" placeholder="Ej. Evolocumab 140 mg c/2s + estatina..." />
+              </div>
+
+              <div class="field">
+                <label>Adherencia</label>
+                <input class="input" id="v_adherence" placeholder="Ej. Buena / irregular / 80%..." />
+              </div>
+
+              <div class="field">
+                <label>RAM</label>
+                <input class="input" id="v_ram" placeholder="Ej. mialgias, reacción local..." />
+              </div>
+
+              <div class="field">
+                <label>Nivel/Prioridad (1/2/3) *</label>
+                <select class="select" id="v_level">
+                  <option value="">—</option>
+                  <option value="1">1 (alta prioridad)</option>
+                  <option value="2">2</option>
+                  <option value="3">3 (baja prioridad)</option>
+                </select>
+              </div>
+
+              <div class="field span2">
+                <label>Justificación nivel (breve)</label>
+                <input class="input" id="v_levelWhy" placeholder="Ej. No alcanza objetivo + cambios + baja adherencia..." />
+              </div>
+
+              <div class="field span2">
+                <label>Objetivos farmacoterapéuticos (OFT)</label>
+                <textarea class="textarea" id="v_oft" rows="2" placeholder="Ej. Alcanzar LDL <55; mejorar adherencia; minimizar RAM..."></textarea>
+              </div>
+
+              <div class="field span2">
+                <label>Plan de seguimiento</label>
+                <textarea class="textarea" id="v_follow" rows="2" placeholder="Ej. Revisión 3 meses; analítica previa; llamada telefónica a 4 semanas..."></textarea>
+              </div>
+
+              <div class="field span2">
+                <label>Intervenciones CMO (selecciona y define estado)</label>
+                <div class="interventionsWrap" id="interventionsPicker"></div>
+              </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="sectionTitle">Texto para HC (copy-paste)</div>
+            <textarea class="textarea mono" id="v_hcText" rows="6" readonly></textarea>
+            <div class="btnRow">
+              <button class="btn ghost" id="btnGenerateHC">Generar texto HC</button>
+              <button class="btn ghost" id="btnCopyHC">Copiar</button>
+            </div>
+          </div>
+
+          <div class="modalFooter">
+            <button class="btn ghost" data-close="modalVisit">Cancelar</button>
+            <button class="btn" id="btnSaveVisit">Guardar visita</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal: Visit details -->
+      <div class="modal hidden" id="modalVisitDetail">
+        <div class="modalBackdrop" data-close="modalVisitDetail"></div>
+        <div class="modalCard modalWide">
+          <div class="modalHeader">
+            <div class="modalTitle">Detalle visita</div>
+            <button class="iconBtn" data-close="modalVisitDetail">✕</button>
+          </div>
+          <div class="modalBody">
+            <div class="smallMuted" id="vd_header">—</div>
+            <div class="divider"></div>
+            <div class="kv" id="vd_kv"></div>
+            <div class="divider"></div>
+            <div class="sectionTitle">Intervenciones</div>
+            <div id="vd_interventions" class="chips"></div>
+          </div>
+          <div class="modalFooter">
+            <button class="btn ghost" data-close="modalVisitDetail">Cerrar</button>
+            <button class="btn danger" id="btnDeleteVisit">Eliminar visita</button>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>
