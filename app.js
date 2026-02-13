@@ -1,11 +1,14 @@
 /* CMO Registry — Local-first (IndexedDB) — GitHub Pages friendly
    - Patients, Visits, Interventions
+   - Stratification variables per visit (prefill from last visit)
+   - Cutoffs fixed: >=23 => Level 1, >=17 => Level 2, else Level 3
+   - Hospital drugs list (PCSK9)
    - Export CSV + Backup JSON + Import JSON
    - Modern UI + LDL chart (canvas) no external libs
 */
 
 const APP = {
-  schemaVersion: "CMO-REGISTRY-1.0",
+  schemaVersion: "CMO-REGISTRY-1.1",
   dbName: "cmo_registry_db",
   dbVersion: 1,
   stores: {
@@ -14,6 +17,8 @@ const APP = {
     interventions: "interventions",
     meta: "meta",
   },
+
+  // Patologías prevalentes (editable)
   conditionList: [
     "PCSK9 / Dislipemia",
     "Riesgo cardiovascular",
@@ -25,6 +30,61 @@ const APP = {
     "Diabetes",
     "Otros",
   ],
+
+  // Fármacos hospitalarios (PCSK9)
+  hospitalDrugs: [
+    "—",
+    "Alirocumab 75 mg",
+    "Alirocumab 150 mg",
+    "Evolocumab 140 mg",
+    "Inclisiran 284 mg",
+  ],
+
+  // Cortes fijos para nivel/prioridad
+  cutoffs: {
+    level1: 23,
+    level2: 17,
+  },
+
+  /* ====== IMPORTANTE ======
+     Sustituye este modelo de ejemplo por TU tabla real de estratificación.
+     Estructura:
+       - id: string único
+       - label: texto
+       - type: "choice"
+       - options: [{ value, label, points }]
+     Puedes crear tantas variables como necesites.
+  */
+  stratificationModel: [
+    {
+      id: "example_1",
+      label: "Ejemplo (REEMPLAZAR): LDL sobre objetivo",
+      type: "choice",
+      options: [
+        { value: "no", label: "No", points: 0 },
+        { value: "yes", label: "Sí", points: 2 },
+      ],
+    },
+    {
+      id: "example_2",
+      label: "Ejemplo (REEMPLAZAR): Ingreso/urgencias último año",
+      type: "choice",
+      options: [
+        { value: "no", label: "No", points: 0 },
+        { value: "yes", label: "Sí", points: 3 },
+      ],
+    },
+    {
+      id: "example_3",
+      label: "Ejemplo (REEMPLAZAR): Polimedicación",
+      type: "choice",
+      options: [
+        { value: "no", label: "No", points: 0 },
+        { value: "yes", label: "Sí", points: 2 },
+      ],
+    },
+  ],
+
   interventionCatalog: {
     Capacidad: [
       "Educación sobre enfermedad",
@@ -48,6 +108,7 @@ const APP = {
       "Recordatorio / cita programada",
     ],
   },
+
   state: {
     db: null,
     patients: [],
@@ -103,9 +164,7 @@ function csvEscape(value) {
 function toCSV(rows, headers) {
   const lines = [];
   lines.push(headers.map(csvEscape).join(","));
-  for (const r of rows) {
-    lines.push(headers.map((h) => csvEscape(r[h])).join(","));
-  }
+  for (const r of rows) lines.push(headers.map((h) => csvEscape(r[h])).join(","));
   return lines.join("\n");
 }
 
@@ -183,7 +242,7 @@ async function dbSetMeta(key, value) {
   return dbPut(APP.stores.meta, { key, value });
 }
 
-// ---------------- Data logic ----------------
+// ---------------- IDs ----------------
 
 function makeVisitId(patientId, dateISO) {
   const rnd = Math.random().toString(16).slice(2, 8);
@@ -194,6 +253,8 @@ function makeInterventionId(visitId, idx) {
   const rnd = Math.random().toString(16).slice(2, 8);
   return `I-${visitId}-${idx}-${rnd}`;
 }
+
+// ---------------- Core queries ----------------
 
 function patientLastVisit(patientId) {
   const visits = APP.state.visits.filter(v => v.patientId === patientId);
@@ -214,13 +275,16 @@ function fmtDate(d) {
   return d;
 }
 
+function levelFromScore(score) {
+  const s = Number(score || 0);
+  if (s >= APP.cutoffs.level1) return 1;
+  if (s >= APP.cutoffs.level2) return 2;
+  return 3;
+}
+
 function levelLabel(level) {
   if (!level) return "—";
-  const n = Number(level);
-  if (n === 1) return "1";
-  if (n === 2) return "2";
-  if (n === 3) return "3";
-  return String(level);
+  return `Nivel ${level}`;
 }
 
 // ---------------- UI: Navigation ----------------
@@ -235,35 +299,36 @@ function setView(viewId) {
   const titleMap = {
     patientsView: ["Pacientes", "Registro longitudinal con CMO + exportación para investigación"],
     exportsView: ["Exportación", "CSV (Excel) + Backup JSON + restauración"],
-    aboutView: ["Ayuda", "Buenas prácticas en entorno hospitalario (local-first, RGPD, backups)"],
+    aboutView: ["Ayuda", "Buenas prácticas (local-first, RGPD, backups)"],
   };
   const [t, h] = titleMap[viewId] || ["", ""];
   $("#pageTitle").textContent = t;
   $("#pageHint").textContent = h;
 
-  // show/hide topbar action
-  if (viewId !== "patientsView") {
-    $("#btnNewPatient").classList.add("hidden");
-  } else {
-    $("#btnNewPatient").classList.remove("hidden");
-  }
+  if (viewId !== "patientsView") $("#btnNewPatient").classList.add("hidden");
+  else $("#btnNewPatient").classList.remove("hidden");
 }
 
-// ---------------- UI: Patients list ----------------
+// ---------------- UI: selectors ----------------
 
 function fillConditionSelectors() {
-  // filter
   const filter = $("#conditionFilter");
   const current = filter.value;
   filter.innerHTML = `<option value="">Todas las patologías</option>` +
     APP.conditionList.map(c => `<option value="${c}">${c}</option>`).join("");
   if (APP.conditionList.includes(current)) filter.value = current;
 
-  // patient modal selector
   const sel = $("#p_condition");
   sel.innerHTML = `<option value="">—</option>` +
     APP.conditionList.map(c => `<option value="${c}">${c}</option>`).join("");
 }
+
+function fillHospitalDrugs() {
+  const sel = $("#v_hospDrug");
+  sel.innerHTML = APP.hospitalDrugs.map(d => `<option value="${d}">${d}</option>`).join("");
+}
+
+// ---------------- Stats ----------------
 
 function updateStats() {
   const patients = APP.state.patients;
@@ -295,6 +360,8 @@ function matchesCondition(p, cond) {
   return p.prevalentCondition === cond;
 }
 
+// ---------------- Tables ----------------
+
 function renderPatientsTable() {
   const tbody = $("#patientsTable tbody");
   tbody.innerHTML = "";
@@ -316,6 +383,7 @@ function renderPatientsTable() {
     const ldl = last?.ldl ?? "—";
     const tgt = last?.ldlTarget ?? "—";
     const lvl = last?.priorityLevel ?? "—";
+    const score = last?.cmoScore ?? "—";
     const lastDate = last?.date ?? "—";
 
     tr.innerHTML = `
@@ -324,15 +392,15 @@ function renderPatientsTable() {
       <td>${p.sex || "—"}</td>
       <td>${p.birthYear || "—"}</td>
       <td>${fmtDate(lastDate)}</td>
-      <td>${levelLabel(lvl)}</td>
-      <td>${ldl ?? "—"}</td>
-      <td>${tgt ?? "—"}</td>
+      <td>${lvl === "—" ? "—" : `Nivel ${lvl}`}</td>
+      <td>${score}</td>
+      <td>${ldl}</td>
+      <td>${tgt}</td>
       <td>${p.status === "inactive" ? "Inactivo" : "Activo"}</td>
     `;
     tbody.appendChild(tr);
   }
 
-  // open patient handlers
   $$('[data-open-patient]').forEach(el => {
     el.addEventListener("click", () => openPatient(el.getAttribute("data-open-patient")));
   });
@@ -342,7 +410,7 @@ function openPatient(patientId) {
   APP.state.selectedPatientId = patientId;
   $("#patientDetailCard").classList.remove("hidden");
   $("#patientsTable").closest(".card").classList.add("hidden");
-  // Keep stats and list visible? We hide table card to focus
+
   $("#patientDetailTitle").textContent = `Ficha · ${patientId}`;
 
   const p = APP.state.patients.find(x => x.patientId === patientId);
@@ -355,21 +423,16 @@ function openPatient(patientId) {
   $("#d_comorb").textContent = p.comorbidities || "—";
   $("#d_notes").textContent = p.notes || "—";
 
-  // Dashboard mini-cards
   const last = patientLastVisit(patientId);
   $("#d_levelNow").textContent = last?.priorityLevel ? `Nivel ${last.priorityLevel}` : "—";
   $("#d_levelWhy").textContent = last?.priorityJustification || "—";
+  $("#d_scoreNow").textContent = (last?.cmoScore ?? "—");
 
   const ldlLast = (last?.ldl ?? null);
   $("#d_ldlLast").textContent = ldlLast === null ? "—" : String(ldlLast);
   const goal = last?.ldlTarget ?? null;
   const ach = last?.ldlGoalAchieved;
   $("#d_ldlGoal").textContent = goal === null ? "—" : `Objetivo ${goal} · ${ach === true ? "Cumple" : ach === false ? "No cumple" : "—"}`;
-
-  const ints = patientInterventions(patientId);
-  $("#d_intervCount").textContent = String(ints.length);
-  const mix = summarizeInterventionsMix(ints);
-  $("#d_intervMix").textContent = mix;
 
   renderVisitsTable(patientId);
   drawLDLChart(patientId);
@@ -380,15 +443,6 @@ function closePatient() {
   $("#patientDetailCard").classList.add("hidden");
   $("#patientsTable").closest(".card").classList.remove("hidden");
 }
-
-function summarizeInterventionsMix(ints) {
-  if (!ints.length) return "—";
-  const byStatus = { accepted: 0, rejected: 0, pending: 0 };
-  for (const i of ints) byStatus[i.status] = (byStatus[i.status] || 0) + 1;
-  return `✅${byStatus.accepted||0} · ❌${byStatus.rejected||0} · ⏳${byStatus.pending||0}`;
-}
-
-// ---------------- UI: Visits ----------------
 
 function renderVisitsTable(patientId) {
   const tbody = $("#visitsTable tbody");
@@ -404,16 +458,16 @@ function renderVisitsTable(patientId) {
 
     tr.innerHTML = `
       <td>${v.date || "—"}</td>
+      <td>${v.hospitalDrug || "—"}</td>
       <td>${v.ldl ?? "—"}</td>
       <td>${v.ldlTarget ?? "—"}</td>
       <td>${goalTxt}</td>
-      <td title="${(v.treatment||"").slice(0,120)}">${(v.treatment || "—").slice(0,42)}${(v.treatment||"").length>42 ? "…" : ""}</td>
+      <td>${v.cmoScore ?? "—"}</td>
+      <td>${v.priorityLevel ? `Nivel ${v.priorityLevel}` : "—"}</td>
+      <td title="${(v.treatment||"").slice(0,160)}">${(v.treatment || "—").slice(0,38)}${(v.treatment||"").length>38 ? "…" : ""}</td>
       <td>${v.adherence || "—"}</td>
       <td>${v.ram || "—"}</td>
-      <td>${v.priorityLevel ? `Nivel ${v.priorityLevel}` : "—"}</td>
-      <td>
-        <span class="link" data-open-visit="${v.visitId}">Ver</span>
-      </td>
+      <td><span class="link" data-open-visit="${v.visitId}">Ver</span></td>
     `;
     tbody.appendChild(tr);
   }
@@ -431,15 +485,18 @@ function openVisitDetail(visitId) {
   $("#vd_header").textContent = `${v.patientId} · ${v.date}`;
 
   const kv = $("#vd_kv");
+  const scoreTxt = v.cmoScore ?? "—";
   kv.innerHTML = `
+    <div class="k">Fármaco hospitalario</div><div class="v">${v.hospitalDrug || "—"}</div>
     <div class="k">LDL</div><div class="v">${v.ldl ?? "—"}</div>
     <div class="k">Objetivo LDL</div><div class="v">${v.ldlTarget ?? "—"}</div>
     <div class="k">¿Cumple objetivo?</div><div class="v">${v.ldlGoalAchieved === true ? "Sí" : v.ldlGoalAchieved === false ? "No" : "—"}</div>
-    <div class="k">Tratamiento</div><div class="v">${v.treatment || "—"}</div>
-    <div class="k">Adherencia</div><div class="v">${v.adherence || "—"}</div>
-    <div class="k">RAM</div><div class="v">${v.ram || "—"}</div>
+    <div class="k">Score</div><div class="v">${scoreTxt}</div>
     <div class="k">Nivel</div><div class="v">${v.priorityLevel ? `Nivel ${v.priorityLevel}` : "—"}</div>
     <div class="k">Justificación</div><div class="v">${v.priorityJustification || "—"}</div>
+    <div class="k">Tratamiento (texto)</div><div class="v">${v.treatment || "—"}</div>
+    <div class="k">Adherencia</div><div class="v">${v.adherence || "—"}</div>
+    <div class="k">RAM</div><div class="v">${v.ram || "—"}</div>
     <div class="k">OFT</div><div class="v">${v.oftObjectives || "—"}</div>
     <div class="k">Plan seguimiento</div><div class="v">${v.followUpPlan || "—"}</div>
   `;
@@ -458,13 +515,11 @@ function openVisitDetail(visitId) {
   openModal("modalVisitDetail");
 }
 
-// ---------------- LDL Chart (canvas, simple) ----------------
+// ---------------- LDL Chart (canvas) ----------------
 
 function drawLDLChart(patientId) {
   const canvas = $("#ldlChart");
   const ctx = canvas.getContext("2d");
-
-  // clear
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   const visits = APP.state.visits
@@ -472,20 +527,14 @@ function drawLDLChart(patientId) {
     .slice()
     .sort((a,b) => (a.date > b.date ? 1 : -1));
 
-  // background grid
   const W = canvas.width, H = canvas.height;
-  ctx.globalAlpha = 1;
-
-  // panel background
   ctx.fillStyle = "rgba(255,255,255,0.02)";
   ctx.fillRect(0,0,W,H);
 
-  // axes padding
   const padL = 50, padR = 18, padT = 14, padB = 30;
   const iw = W - padL - padR;
   const ih = H - padT - padB;
 
-  // grid lines
   ctx.strokeStyle = "rgba(255,255,255,0.08)";
   ctx.lineWidth = 1;
   for (let i=0;i<=5;i++){
@@ -496,16 +545,10 @@ function drawLDLChart(patientId) {
     ctx.stroke();
   }
 
-  // no data
   if (visits.length < 2) {
     ctx.fillStyle = "rgba(231,238,252,0.75)";
     ctx.font = "14px system-ui";
     ctx.fillText(visits.length === 1 ? "1 punto registrado (añade otra visita para ver tendencia)" : "Sin LDL longitudinal aún", padL, padT+22);
-    // draw single point if exists
-    if (visits.length === 1) {
-      const y = padT + ih/2;
-      ctx.fillRect(padL+iw/2 - 2, y - 2, 4, 4);
-    }
     return;
   }
 
@@ -517,7 +560,6 @@ function drawLDLChart(patientId) {
   const yMin = Math.max(0, minV - range*0.15);
   const yMax = maxV + range*0.15;
 
-  // y labels
   ctx.fillStyle = "rgba(231,238,252,0.70)";
   ctx.font = "12px system-ui";
   for (let i=0;i<=5;i++){
@@ -526,7 +568,6 @@ function drawLDLChart(patientId) {
     ctx.fillText(String(Math.round(val)), 8, y+4);
   }
 
-  // x positions
   const n = visits.length;
   const points = visits.map((v, idx) => {
     const x = padL + (iw*idx/(n-1));
@@ -535,7 +576,6 @@ function drawLDLChart(patientId) {
     return { x, y, date: v.date, ldl: val };
   });
 
-  // line
   ctx.strokeStyle = "rgba(122,162,255,0.85)";
   ctx.lineWidth = 2;
   ctx.beginPath();
@@ -543,7 +583,6 @@ function drawLDLChart(patientId) {
   for (let i=1;i<points.length;i++) ctx.lineTo(points[i].x, points[i].y);
   ctx.stroke();
 
-  // points
   ctx.fillStyle = "rgba(88,211,162,0.95)";
   for (const p of points) {
     ctx.beginPath();
@@ -551,27 +590,20 @@ function drawLDLChart(patientId) {
     ctx.fill();
   }
 
-  // x labels (first, mid, last)
   const idxs = [0, Math.floor((n-1)/2), n-1].filter((v,i,a)=>a.indexOf(v)===i);
   ctx.fillStyle = "rgba(231,238,252,0.65)";
   ctx.font = "11px system-ui";
   for (const idx of idxs) {
     const p = points[idx];
-    const label = p.date;
-    ctx.fillText(label, Math.max(padL, Math.min(p.x-28, W-padR-70)), H-10);
+    ctx.fillText(p.date, Math.max(padL, Math.min(p.x-28, W-padR-70)), H-10);
   }
 }
 
 // ---------------- Modal helpers ----------------
 
-function openModal(id) {
-  $(`#${id}`).classList.remove("hidden");
-}
-function closeModal(id) {
-  $(`#${id}`).classList.add("hidden");
-}
+function openModal(id) { $(`#${id}`).classList.remove("hidden"); }
+function closeModal(id) { $(`#${id}`).classList.add("hidden"); }
 
-// close by data-close
 function bindModalClose() {
   $$("[data-close]").forEach(el => {
     el.addEventListener("click", () => closeModal(el.getAttribute("data-close")));
@@ -595,8 +627,6 @@ async function savePatient() {
   const prevalentCondition = $("#p_condition").value.trim();
   if (!patientId) return toast("ID pseudónimo obligatorio.");
   if (!prevalentCondition) return toast("Patología prevalente obligatoria.");
-
-  // basic validation: avoid spaces
   if (/\s/.test(patientId)) return toast("El ID no debe contener espacios.");
 
   const birthYear = $("#p_birthYear").value.trim();
@@ -617,7 +647,6 @@ async function savePatient() {
     schemaVersion: APP.schemaVersion,
   };
 
-  // ensure unique id
   const exists = APP.state.patients.some(x => x.patientId === patientId);
   if (exists) return toast("Ese ID ya existe.");
 
@@ -631,7 +660,109 @@ async function savePatient() {
   toast("Paciente guardado.");
 }
 
-// ---------------- Create visit + interventions ----------------
+// ---------------- Stratification variables UI ----------------
+
+function buildStratVarsPicker(defaultValues = {}) {
+  const container = $("#stratVarsPicker");
+  container.innerHTML = "";
+
+  // Nota visual para evitar “olvidar” que está en placeholder
+  if (APP.stratificationModel.some(v => v.id.startsWith("example_"))) {
+    const warn = document.createElement("div");
+    warn.className = "smallMuted";
+    warn.innerHTML = "<b>AVISO:</b> Modelo de estratificación en modo ejemplo. Sustituye APP.stratificationModel por tu tabla real.";
+    container.appendChild(warn);
+  }
+
+  for (const v of APP.stratificationModel) {
+    const row = document.createElement("div");
+    row.className = "intervRow";
+    row.style.gridTemplateColumns = "1.6fr 1fr 1fr";
+    row.dataset.varId = v.id;
+
+    const sel = document.createElement("select");
+    sel.className = "select";
+    sel.setAttribute("data-strat-sel", "1");
+
+    sel.innerHTML = `<option value="">—</option>` + v.options
+      .map(o => `<option value="${o.value}">${o.label} (${o.points})</option>`)
+      .join("");
+
+    // prefill
+    if (defaultValues && defaultValues[v.id] !== undefined && defaultValues[v.id] !== null) {
+      sel.value = String(defaultValues[v.id]);
+    }
+
+    const pts = document.createElement("div");
+    pts.className = "smallMuted";
+    pts.setAttribute("data-strat-pts", "1");
+    pts.textContent = "0 pts";
+
+    const label = document.createElement("div");
+    label.className = "smallMuted";
+    label.textContent = v.label;
+
+    row.appendChild(label);
+    row.appendChild(sel);
+    row.appendChild(pts);
+
+    container.appendChild(row);
+
+    sel.addEventListener("change", () => {
+      updateStratScoreUI();
+      autoFillLevelFromScore();
+    });
+  }
+
+  updateStratScoreUI();
+  autoFillLevelFromScore();
+}
+
+function getStratSelections() {
+  const out = {};
+  const rows = Array.from($("#stratVarsPicker").querySelectorAll(".intervRow"));
+  for (const r of rows) {
+    const id = r.dataset.varId;
+    const sel = r.querySelector('[data-strat-sel]');
+    if (sel && sel.value !== "") out[id] = sel.value;
+  }
+  return out;
+}
+
+function computeStratScore(selections) {
+  let total = 0;
+  for (const v of APP.stratificationModel) {
+    const chosen = selections[v.id];
+    if (chosen === undefined) continue;
+    const opt = v.options.find(o => String(o.value) === String(chosen));
+    if (opt) total += Number(opt.points || 0);
+  }
+  return total;
+}
+
+function updateStratScoreUI() {
+  const selections = getStratSelections();
+  const rows = Array.from($("#stratVarsPicker").querySelectorAll(".intervRow"));
+  for (const r of rows) {
+    const id = r.dataset.varId;
+    const sel = r.querySelector('[data-strat-sel]');
+    const ptsEl = r.querySelector('[data-strat-pts]');
+    const varDef = APP.stratificationModel.find(v => v.id === id);
+    const opt = varDef?.options?.find(o => String(o.value) === String(sel.value));
+    const pts = opt ? Number(opt.points || 0) : 0;
+    ptsEl.textContent = `${pts} pts`;
+  }
+  const total = computeStratScore(selections);
+  $("#v_score").value = String(total);
+}
+
+function autoFillLevelFromScore() {
+  const score = safeNum($("#v_score").value) ?? 0;
+  const lvl = levelFromScore(score);
+  $("#v_levelAuto").value = `Nivel ${lvl}`;
+}
+
+// ---------------- Interventions UI ----------------
 
 function buildInterventionsPicker() {
   const container = $("#interventionsPicker");
@@ -663,55 +794,18 @@ function buildInterventionsPicker() {
   }
 }
 
-function resetVisitForm() {
-  $("#v_date").value = todayISO();
-  $("#v_ldl").value = "";
-  $("#v_ldlTarget").value = "";
-  $("#v_goalAch").value = "";
-  $("#v_treatment").value = "";
-  $("#v_adherence").value = "";
-  $("#v_ram").value = "";
-  $("#v_level").value = "";
-  $("#v_levelWhy").value = "";
-  $("#v_oft").value = "";
-  $("#v_follow").value = "";
-  $("#v_hcText").value = "";
-  buildInterventionsPicker();
-}
-
-function generateHCText(patient, visit, interventions) {
-  const lines = [];
-  lines.push(`Paciente ${patient.patientId} · Patología prevalente: ${patient.prevalentCondition || "—"}`);
-  lines.push(`Fecha visita: ${visit.date || "—"}`);
-  lines.push(`LDL: ${visit.ldl ?? "—"} mg/dL · Objetivo: ${visit.ldlTarget ?? "—"} mg/dL · Cumple: ${
-    visit.ldlGoalAchieved === true ? "Sí" : visit.ldlGoalAchieved === false ? "No" : "—"
-  }`);
-  lines.push(`Tratamiento: ${visit.treatment || "—"}`);
-  lines.push(`Adherencia: ${visit.adherence || "—"} · RAM: ${visit.ram || "—"}`);
-  lines.push(`Nivel/Prioridad: ${visit.priorityLevel || "—"} · Justificación: ${visit.priorityJustification || "—"}`);
-  if (visit.oftObjectives) lines.push(`OFT: ${visit.oftObjectives}`);
-  if (visit.followUpPlan) lines.push(`Plan seguimiento: ${visit.followUpPlan}`);
-
-  if (interventions.length) {
-    lines.push(`Intervenciones CMO:`);
-    for (const i of interventions) {
-      const st = i.status === "accepted" ? "accepted" : i.status === "rejected" ? "rejected" : "pending";
-      lines.push(`- ${i.cmoDimension}: ${i.description} [${st}]${i.outcomeNotes ? " — " + i.outcomeNotes : ""}`);
-    }
-  } else {
-    lines.push(`Intervenciones CMO: —`);
-  }
-  return lines.join("\n");
-}
-
 function collectInterventionsFromPicker(patientId, visitId) {
   const rows = Array.from($("#interventionsPicker").querySelectorAll(".intervRow"));
   const picked = [];
   let idx = 0;
   for (const row of rows) {
-    const status = row.querySelector("[data-int-status]").value;
-    const note = row.querySelector("[data-int-note]").value.trim();
+    const statusSel = row.querySelector("[data-int-status]");
+    const noteIn = row.querySelector("[data-int-note]");
+    if (!statusSel) continue;
+    const status = statusSel.value;
+    const note = (noteIn?.value || "").trim();
     if (!status) continue;
+
     picked.push({
       interventionId: makeInterventionId(visitId, idx++),
       patientId,
@@ -728,6 +822,136 @@ function collectInterventionsFromPicker(patientId, visitId) {
   return picked;
 }
 
+// ---------------- Visit form ----------------
+
+function resetVisitForm(defaults = {}) {
+  $("#v_date").value = todayISO();
+  $("#v_hospDrug").value = "—";
+  $("#v_ldl").value = "";
+  $("#v_ldlTarget").value = "";
+  $("#v_goalAch").value = "";
+  $("#v_treatment").value = "";
+  $("#v_adherence").value = "";
+  $("#v_ram").value = "";
+  $("#v_score").value = "0";
+  $("#v_levelAuto").value = "Nivel 3";
+  $("#v_levelWhy").value = "";
+  $("#v_oft").value = "";
+  $("#v_follow").value = "";
+  $("#v_hcText").value = "";
+
+  buildStratVarsPicker(defaults.stratVars || {});
+  buildInterventionsPicker();
+
+  // Pre-fill some fields from previous visit if provided
+  if (defaults.hospitalDrug) $("#v_hospDrug").value = defaults.hospitalDrug;
+  if (defaults.ldlTarget !== undefined && defaults.ldlTarget !== null) $("#v_ldlTarget").value = String(defaults.ldlTarget);
+  if (defaults.treatment) $("#v_treatment").value = defaults.treatment;
+  if (defaults.adherence) $("#v_adherence").value = defaults.adherence;
+  if (defaults.ram) $("#v_ram").value = defaults.ram;
+}
+
+function getDefaultsFromLastVisit(patientId) {
+  const last = patientLastVisit(patientId);
+  if (!last) return {};
+  return {
+    hospitalDrug: last.hospitalDrug || "—",
+    ldlTarget: last.ldlTarget ?? null,
+    treatment: last.treatment ?? null,
+    adherence: last.adherence ?? null,
+    ram: last.ram ?? null,
+    stratVars: last.stratVars || {}, // <-- precarga variables
+  };
+}
+
+function generateHCText(patient, visit, interventions) {
+  const lines = [];
+  lines.push(`Paciente ${patient.patientId} · Patología prevalente: ${patient.prevalentCondition || "—"}`);
+  lines.push(`Fecha visita: ${visit.date || "—"}`);
+  lines.push(`Fármaco hospitalario: ${visit.hospitalDrug || "—"}`);
+  lines.push(`LDL: ${visit.ldl ?? "—"} mg/dL · Objetivo: ${visit.ldlTarget ?? "—"} mg/dL · Cumple: ${
+    visit.ldlGoalAchieved === true ? "Sí" : visit.ldlGoalAchieved === false ? "No" : "—"
+  }`);
+  lines.push(`Tratamiento (texto): ${visit.treatment || "—"}`);
+  lines.push(`Adherencia: ${visit.adherence || "—"} · RAM: ${visit.ram || "—"}`);
+
+  lines.push(`Estratificación: Score ${visit.cmoScore ?? "—"} · Nivel ${visit.priorityLevel ?? "—"} · ${visit.priorityJustification || "—"}`);
+
+  // Variables (detalle)
+  if (visit.stratVars && Object.keys(visit.stratVars).length) {
+    lines.push(`Variables estratificación (selección):`);
+    for (const v of APP.stratificationModel) {
+      const val = visit.stratVars[v.id];
+      if (val === undefined) continue;
+      const opt = v.options.find(o => String(o.value) === String(val));
+      const txt = opt ? `${opt.label} (${opt.points})` : String(val);
+      lines.push(`- ${v.label}: ${txt}`);
+    }
+  }
+
+  if (visit.oftObjectives) lines.push(`OFT: ${visit.oftObjectives}`);
+  if (visit.followUpPlan) lines.push(`Plan seguimiento: ${visit.followUpPlan}`);
+
+  if (interventions.length) {
+    lines.push(`Intervenciones CMO:`);
+    for (const i of interventions) {
+      lines.push(`- ${i.cmoDimension}: ${i.description} [${i.status}]${i.outcomeNotes ? " — " + i.outcomeNotes : ""}`);
+    }
+  } else {
+    lines.push(`Intervenciones CMO: —`);
+  }
+  return lines.join("\n");
+}
+
+function generateHCFromForm() {
+  const patientId = APP.state.selectedPatientId;
+  if (!patientId) return toast("Selecciona un paciente.");
+  const patient = APP.state.patients.find(p => p.patientId === patientId);
+  if (!patient) return toast("Paciente no encontrado.");
+
+  const stratVars = getStratSelections();
+  const score = computeStratScore(stratVars);
+  const lvl = levelFromScore(score);
+
+  const visit = {
+    date: $("#v_date").value || "—",
+    hospitalDrug: $("#v_hospDrug").value || "—",
+    ldl: safeNum($("#v_ldl").value),
+    ldlTarget: safeNum($("#v_ldlTarget").value),
+    ldlGoalAchieved: $("#v_goalAch").value === "true" ? true : $("#v_goalAch").value === "false" ? false : null,
+    treatment: ($("#v_treatment").value || "").trim() || null,
+    adherence: ($("#v_adherence").value || "").trim() || null,
+    ram: ($("#v_ram").value || "").trim() || null,
+    stratVars,
+    cmoScore: score,
+    priorityLevel: lvl,
+    priorityJustification: ($("#v_levelWhy").value || "").trim() || null,
+    oftObjectives: ($("#v_oft").value || "").trim() || null,
+    followUpPlan: ($("#v_follow").value || "").trim() || null,
+  };
+
+  const tempVisitId = `TEMP-${patientId}-${visit.date}`;
+  const interventions = collectInterventionsFromPicker(patientId, tempVisitId);
+
+  $("#v_score").value = String(score);
+  $("#v_levelAuto").value = `Nivel ${lvl}`;
+
+  const text = generateHCText(patient, visit, interventions);
+  $("#v_hcText").value = text;
+  toast("Texto HC generado.");
+}
+
+async function copyHC() {
+  const txt = $("#v_hcText").value || "";
+  if (!txt) return toast("No hay texto para copiar.");
+  try {
+    await navigator.clipboard.writeText(txt);
+    toast("Copiado al portapapeles.");
+  } catch {
+    toast("No se pudo copiar (restricción del navegador).");
+  }
+}
+
 async function saveVisit() {
   const patientId = APP.state.selectedPatientId;
   if (!patientId) return toast("Selecciona un paciente.");
@@ -735,8 +959,9 @@ async function saveVisit() {
   const date = $("#v_date").value;
   if (!date) return toast("Fecha obligatoria.");
 
-  const priorityLevel = $("#v_level").value;
-  if (!priorityLevel) return toast("Nivel/Prioridad obligatorio (1/2/3).");
+  const stratVars = getStratSelections();
+  const score = computeStratScore(stratVars);
+  const priorityLevel = levelFromScore(score);
 
   const ldl = safeNum($("#v_ldl").value);
   const ldlTarget = safeNum($("#v_ldlTarget").value);
@@ -748,23 +973,27 @@ async function saveVisit() {
     visitId: makeVisitId(patientId, date),
     patientId,
     date,
+    hospitalDrug: $("#v_hospDrug").value || "—",
     ldl,
     ldlTarget,
     ldlGoalAchieved,
     treatment: ($("#v_treatment").value || "").trim() || null,
     adherence: ($("#v_adherence").value || "").trim() || null,
     ram: ($("#v_ram").value || "").trim() || null,
-    cmoScore: null, // preparado para integrar score completo
-    priorityLevel: Number(priorityLevel),
+
+    stratVars,      // <-- variables guardadas por visita
+    cmoScore: score, // <-- score calculado
+    priorityLevel,  // <-- nivel calculado con cortes fijos
     priorityJustification: ($("#v_levelWhy").value || "").trim() || null,
+
     oftObjectives: ($("#v_oft").value || "").trim() || null,
     followUpPlan: ($("#v_follow").value || "").trim() || null,
-    nextVisitSuggested: null, // se puede auto-proponer según nivel
+    nextVisitSuggested: null,
+
     createdAt: new Date().toISOString(),
     schemaVersion: APP.schemaVersion,
   };
 
-  // interventions
   const interventions = collectInterventionsFromPicker(patientId, visit.visitId);
 
   await dbPut(APP.stores.visits, visit);
@@ -775,7 +1004,6 @@ async function saveVisit() {
     APP.state.interventions.push(i);
   }
 
-  // Refresh patient view
   closeModal("modalVisit");
   openPatient(patientId);
   updateStats();
@@ -792,14 +1020,10 @@ async function deleteSelectedVisit() {
 
   if (!confirm("¿Eliminar esta visita y sus intervenciones?")) return;
 
-  // delete interventions
   const ints = visitInterventions(visitId);
-  for (const i of ints) {
-    await dbDelete(APP.stores.interventions, i.interventionId);
-  }
+  for (const i of ints) await dbDelete(APP.stores.interventions, i.interventionId);
   APP.state.interventions = APP.state.interventions.filter(i => i.visitId !== visitId);
 
-  // delete visit
   await dbDelete(APP.stores.visits, visitId);
   APP.state.visits = APP.state.visits.filter(x => x.visitId !== visitId);
 
@@ -830,6 +1054,7 @@ function visitsForCSV() {
     visitId: v.visitId,
     patientId: v.patientId,
     date: v.date ?? "",
+    hospitalDrug: v.hospitalDrug ?? "",
     ldl: v.ldl ?? "",
     ldlTarget: v.ldlTarget ?? "",
     ldlGoalAchieved: v.ldlGoalAchieved === true ? "true" : v.ldlGoalAchieved === false ? "false" : "",
@@ -841,6 +1066,7 @@ function visitsForCSV() {
     priorityJustification: v.priorityJustification ?? "",
     oftObjectives: v.oftObjectives ?? "",
     followUpPlan: v.followUpPlan ?? "",
+    stratVars_json: v.stratVars ? JSON.stringify(v.stratVars) : "",
     createdAt: v.createdAt ?? "",
     schemaVersion: v.schemaVersion ?? "",
   }));
@@ -863,28 +1089,21 @@ function interventionsForCSV() {
 
 async function exportPatientsCSV() {
   const rows = patientsForCSV();
-  const headers = Object.keys(rows[0] || {
-    patientId:"", prevalentCondition:"", sex:"", birthYear:"", comorbidities:"", notes:"", status:"", createdAt:"", schemaVersion:""
-  });
+  const headers = Object.keys(rows[0] || {});
   downloadText("patients.csv", toCSV(rows, headers), "text/csv;charset=utf-8");
   toast("patients.csv exportado.");
 }
 
 async function exportVisitsCSV() {
   const rows = visitsForCSV();
-  const headers = Object.keys(rows[0] || {
-    visitId:"", patientId:"", date:"", ldl:"", ldlTarget:"", ldlGoalAchieved:"", treatment:"", adherence:"", ram:"",
-    cmoScore:"", priorityLevel:"", priorityJustification:"", oftObjectives:"", followUpPlan:"", createdAt:"", schemaVersion:""
-  });
+  const headers = Object.keys(rows[0] || {});
   downloadText("visits.csv", toCSV(rows, headers), "text/csv;charset=utf-8");
   toast("visits.csv exportado.");
 }
 
 async function exportInterventionsCSV() {
   const rows = interventionsForCSV();
-  const headers = Object.keys(rows[0] || {
-    interventionId:"", patientId:"", visitId:"", type:"", cmoDimension:"", description:"", status:"", outcomeNotes:"", createdAt:"", schemaVersion:""
-  });
+  const headers = Object.keys(rows[0] || {});
   downloadText("interventions.csv", toCSV(rows, headers), "text/csv;charset=utf-8");
   toast("interventions.csv exportado.");
 }
@@ -897,8 +1116,7 @@ async function backupJSON() {
     visits: APP.state.visits,
     interventions: APP.state.interventions,
   };
-  const txt = JSON.stringify(payload, null, 2);
-  downloadText(`backup_${new Date().toISOString().slice(0,10)}.json`, txt, "application/json;charset=utf-8");
+  downloadText(`backup_${new Date().toISOString().slice(0,10)}.json`, JSON.stringify(payload, null, 2), "application/json;charset=utf-8");
   const when = new Date().toISOString();
   await dbSetMeta("lastBackupAt", when);
   updateStats();
@@ -914,15 +1132,8 @@ async function importJSON(file) {
       return toast("Backup inválido (faltan secciones).");
     }
 
-    // Basic schema guard
-    if (payload.schemaVersion && payload.schemaVersion !== APP.schemaVersion) {
-      // No bloqueamos: pero avisamos
-      toast("Aviso: versión de esquema distinta. Se importará igualmente.");
-    }
-
     if (!confirm("Esto mezclará (o sobrescribirá por ID) los datos actuales. ¿Continuar?")) return;
 
-    // Upsert all
     for (const p of payload.patients) await dbPut(APP.stores.patients, p);
     for (const v of payload.visits) await dbPut(APP.stores.visits, v);
     for (const i of payload.interventions) await dbPut(APP.stores.interventions, i);
@@ -938,60 +1149,13 @@ async function importJSON(file) {
   }
 }
 
-// ---------------- UI: Visit modal HC ----------------
-
-function generateHCFromForm() {
-  const patientId = APP.state.selectedPatientId;
-  if (!patientId) return toast("Selecciona un paciente.");
-  const patient = APP.state.patients.find(p => p.patientId === patientId);
-  if (!patient) return toast("Paciente no encontrado.");
-
-  const visit = {
-    date: $("#v_date").value || "—",
-    ldl: safeNum($("#v_ldl").value),
-    ldlTarget: safeNum($("#v_ldlTarget").value),
-    ldlGoalAchieved: $("#v_goalAch").value === "true" ? true : $("#v_goalAch").value === "false" ? false : null,
-    treatment: ($("#v_treatment").value || "").trim() || null,
-    adherence: ($("#v_adherence").value || "").trim() || null,
-    ram: ($("#v_ram").value || "").trim() || null,
-    priorityLevel: $("#v_level").value ? Number($("#v_level").value) : null,
-    priorityJustification: ($("#v_levelWhy").value || "").trim() || null,
-    oftObjectives: ($("#v_oft").value || "").trim() || null,
-    followUpPlan: ($("#v_follow").value || "").trim() || null,
-  };
-
-  // temp visitId for interventions preview
-  const tempVisitId = `TEMP-${patientId}-${visit.date}`;
-  const interventions = collectInterventionsFromPicker(patientId, tempVisitId).map(i => ({
-    ...i,
-    visitId: tempVisitId
-  }));
-
-  const text = generateHCText(patient, visit, interventions);
-  $("#v_hcText").value = text;
-  toast("Texto HC generado.");
-}
-
-async function copyHC() {
-  const txt = $("#v_hcText").value || "";
-  if (!txt) return toast("No hay texto para copiar.");
-  try {
-    await navigator.clipboard.writeText(txt);
-    toast("Copiado al portapapeles.");
-  } catch {
-    toast("No se pudo copiar (restricción del navegador).");
-  }
-}
-
-// ---------------- Load ----------------
+// ---------------- Bindings ----------------
 
 async function loadAll() {
   APP.state.patients = await dbGetAll(APP.stores.patients);
   APP.state.visits = await dbGetAll(APP.stores.visits);
   APP.state.interventions = await dbGetAll(APP.stores.interventions);
 }
-
-// ---------------- Bindings ----------------
 
 function bindNav() {
   $$(".navBtn").forEach(btn => {
@@ -1014,8 +1178,9 @@ function bindPatientsUI() {
 
   $("#btnNewVisit").addEventListener("click", () => {
     if (!APP.state.selectedPatientId) return toast("Selecciona un paciente.");
-    resetVisitForm();
-    $("#visitForPatient").textContent = `Paciente: ${APP.state.selectedPatientId}`;
+    const defaults = getDefaultsFromLastVisit(APP.state.selectedPatientId);
+    resetVisitForm(defaults);
+    $("#visitForPatient").textContent = `Paciente: ${APP.state.selectedPatientId} (variables precargadas de última visita si existe)`;
     openModal("modalVisit");
   });
 
@@ -1023,6 +1188,12 @@ function bindPatientsUI() {
 
   $("#btnGenerateHC").addEventListener("click", generateHCFromForm);
   $("#btnCopyHC").addEventListener("click", copyHC);
+
+  // LDL / objetivo changes can impact clinical status but not score (score is from table)
+  ["#v_ldl", "#v_ldlTarget", "#v_goalAch", "#v_hospDrug"].forEach(sel => {
+    const el = $(sel);
+    if (el) el.addEventListener("change", () => {});
+  });
 }
 
 function bindExportUI() {
@@ -1052,6 +1223,7 @@ async function init() {
   await loadAll();
 
   fillConditionSelectors();
+  fillHospitalDrugs();
   updateStats();
   renderPatientsTable();
 
@@ -1061,10 +1233,7 @@ async function init() {
   bindExportUI();
   bindVisitDetailUI();
 
-  // Default view
   setView("patientsView");
-
-  // Fill patient condition filter
   toast("Listo. Datos en local (IndexedDB).");
 }
 
