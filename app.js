@@ -753,7 +753,7 @@ function drawLDLChart(patientId) {
 
   const W = canvas.width,
     H = canvas.height;
-  ctx.fillStyle = "rgba(255,255,255,0.02)";
+  ctx.fillStyle = "#fafbfd";
   ctx.fillRect(0, 0, W, H);
 
   const padL = 50,
@@ -763,7 +763,7 @@ function drawLDLChart(patientId) {
   const iw = W - padL - padR;
   const ih = H - padT - padB;
 
-  ctx.strokeStyle = "rgba(255,255,255,0.08)";
+  ctx.strokeStyle = "rgba(0,0,0,0.07)";
   ctx.lineWidth = 1;
   for (let i = 0; i <= 5; i++) {
     const y = padT + (ih * i) / 5;
@@ -774,7 +774,7 @@ function drawLDLChart(patientId) {
   }
 
   if (visits.length < 2) {
-    ctx.fillStyle = "rgba(231,238,252,0.75)";
+    ctx.fillStyle = "rgba(0,0,0,0.45)";
     ctx.font = "14px system-ui";
     ctx.fillText(
       visits.length === 1 ? "1 punto registrado (añade otra visita para ver tendencia)" : "Sin LDL longitudinal aún",
@@ -792,7 +792,7 @@ function drawLDLChart(patientId) {
   const yMin = Math.max(0, minV - range * 0.15);
   const yMax = maxV + range * 0.15;
 
-  ctx.fillStyle = "rgba(231,238,252,0.70)";
+  ctx.fillStyle = "rgba(0,0,0,0.50)";
   ctx.font = "12px system-ui";
   for (let i = 0; i <= 5; i++) {
     const y = padT + (ih * i) / 5;
@@ -808,14 +808,14 @@ function drawLDLChart(patientId) {
     return { x, y, date: v.date, ldl: val };
   });
 
-  ctx.strokeStyle = "rgba(122,162,255,0.85)";
+  ctx.strokeStyle = "rgba(59,109,224,0.85)";
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(points[0].x, points[0].y);
   for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
   ctx.stroke();
 
-  ctx.fillStyle = "rgba(88,211,162,0.95)";
+  ctx.fillStyle = "rgba(42,157,110,0.90)";
   for (const p of points) {
     ctx.beginPath();
     ctx.arc(p.x, p.y, 3.2, 0, Math.PI * 2);
@@ -823,7 +823,7 @@ function drawLDLChart(patientId) {
   }
 
   const idxs = [0, Math.floor((n - 1) / 2), n - 1].filter((v, i, a) => a.indexOf(v) === i);
-  ctx.fillStyle = "rgba(231,238,252,0.65)";
+  ctx.fillStyle = "rgba(0,0,0,0.45)";
   ctx.font = "11px system-ui";
   for (const idx of idxs) {
     const p = points[idx];
@@ -1260,6 +1260,40 @@ async function deleteSelectedVisit() {
   updateStats();
 }
 
+async function deleteSelectedPatient() {
+  const patientId = APP.state.selectedPatientId;
+  if (!patientId) return;
+
+  const p = APP.state.patients.find((x) => x.patientId === patientId);
+  if (!p) return;
+
+  const visits = APP.state.visits.filter((v) => v.patientId === patientId);
+  const intCount = APP.state.interventions.filter((i) => i.patientId === patientId).length;
+
+  const msg =
+    `¿Eliminar el paciente "${patientId}" con ${visits.length} visita(s) y ${intCount} intervención(es)?\n\nEsta acción es irreversible.`;
+  if (!confirm(msg)) return;
+
+  // Delete all interventions for this patient
+  const ints = APP.state.interventions.filter((i) => i.patientId === patientId);
+  for (const i of ints) await dbDelete(APP.stores.interventions, i.interventionId);
+  APP.state.interventions = APP.state.interventions.filter((i) => i.patientId !== patientId);
+
+  // Delete all visits for this patient
+  for (const v of visits) await dbDelete(APP.stores.visits, v.visitId);
+  APP.state.visits = APP.state.visits.filter((v) => v.patientId !== patientId);
+
+  // Delete the patient
+  await dbDelete(APP.stores.patients, patientId);
+  APP.state.patients = APP.state.patients.filter((x) => x.patientId !== patientId);
+
+  closePatient();
+  fillConditionSelectors();
+  updateStats();
+  renderPatientsTable();
+  toast("Paciente eliminado.");
+}
+
 // ---------------- Export / Backup ----------------
 
 function patientsForCSV() {
@@ -1402,6 +1436,7 @@ function bindPatientsUI() {
   $("#conditionFilter").addEventListener("change", renderPatientsTable);
 
   $("#btnBackToList").addEventListener("click", closePatient);
+  $("#btnDeletePatient").addEventListener("click", deleteSelectedPatient);
 
   $("#btnNewVisit").addEventListener("click", () => {
     if (!APP.state.selectedPatientId) return toast("Selecciona un paciente.");
