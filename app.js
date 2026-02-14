@@ -1260,6 +1260,40 @@ async function deleteSelectedVisit() {
   updateStats();
 }
 
+async function deleteSelectedPatient() {
+  const patientId = APP.state.selectedPatientId;
+  if (!patientId) return;
+
+  const p = APP.state.patients.find((x) => x.patientId === patientId);
+  if (!p) return;
+
+  const visits = APP.state.visits.filter((v) => v.patientId === patientId);
+  const intCount = APP.state.interventions.filter((i) => i.patientId === patientId).length;
+
+  const msg =
+    `¿Eliminar el paciente "${patientId}" con ${visits.length} visita(s) y ${intCount} intervención(es)?\n\nEsta acción es irreversible.`;
+  if (!confirm(msg)) return;
+
+  // Delete all interventions for this patient
+  const ints = APP.state.interventions.filter((i) => i.patientId === patientId);
+  for (const i of ints) await dbDelete(APP.stores.interventions, i.interventionId);
+  APP.state.interventions = APP.state.interventions.filter((i) => i.patientId !== patientId);
+
+  // Delete all visits for this patient
+  for (const v of visits) await dbDelete(APP.stores.visits, v.visitId);
+  APP.state.visits = APP.state.visits.filter((v) => v.patientId !== patientId);
+
+  // Delete the patient
+  await dbDelete(APP.stores.patients, patientId);
+  APP.state.patients = APP.state.patients.filter((x) => x.patientId !== patientId);
+
+  closePatient();
+  fillConditionSelectors();
+  updateStats();
+  renderPatientsTable();
+  toast("Paciente eliminado.");
+}
+
 // ---------------- Export / Backup ----------------
 
 function patientsForCSV() {
@@ -1402,6 +1436,7 @@ function bindPatientsUI() {
   $("#conditionFilter").addEventListener("change", renderPatientsTable);
 
   $("#btnBackToList").addEventListener("click", closePatient);
+  $("#btnDeletePatient").addEventListener("click", deleteSelectedPatient);
 
   $("#btnNewVisit").addEventListener("click", () => {
     if (!APP.state.selectedPatientId) return toast("Selecciona un paciente.");
