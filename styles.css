@@ -102,8 +102,14 @@ body{
 }
 .btn.ghost:hover{background: rgba(255,255,255,.04)}
 .btn.danger{
-  border-color: rgba(255,90,122,.28);
-  background: rgba(255,90,122,.12);
+  border-color: rgba(255,90,122,.50);
+  background: rgba(255,90,122,.18);
+  color: #ff5a7a;
+}
+.btn.danger:hover{
+  background: rgba(255,90,122,.32);
+  border-color: rgba(255,90,122,.65);
+  color: #fff;
 }
 .btnRow{display:flex; gap:10px; flex-wrap:wrap}
 .fileBtn{display:inline-flex; align-items:center; gap:12px}
