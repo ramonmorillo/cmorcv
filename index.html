@@ -208,36 +208,96 @@
       </section>
 
       <section id="dashboardView" class="view hidden">
-        <div class="dashRow">
-          <div class="miniCard">
+        <!-- Row 1: Summary cards -->
+        <div class="dashRow dashRow4">
+          <div class="miniCard miniCard--accent">
             <div class="miniLabel">En seguimiento activo</div>
             <div class="miniValue" id="dash_active">0</div>
+            <div class="miniHint" id="dash_activePct"></div>
           </div>
-          <div class="miniCard">
+          <div class="miniCard miniCard--green">
             <div class="miniLabel">Con visitas registradas</div>
             <div class="miniValue" id="dash_withVisits">0</div>
+            <div class="miniHint" id="dash_withVisitsPct"></div>
           </div>
-          <div class="miniCard">
+          <div class="miniCard miniCard--teal">
             <div class="miniLabel">Objetivo LDL alcanzado</div>
             <div class="miniValue" id="dash_goalYes">0</div>
+            <div class="miniHint" id="dash_goalYesPct"></div>
+          </div>
+          <div class="miniCard miniCard--orange">
+            <div class="miniLabel">Intervenciones pendientes</div>
+            <div class="miniValue" id="dash_pendingIV">0</div>
+            <div class="miniHint" id="dash_pendingIVHint"></div>
           </div>
         </div>
 
-        <div class="grid">
+        <!-- Row 2: Visual charts -->
+        <div class="grid grid3">
           <div class="card">
-            <div class="cardHeader"><div class="cardTitle">Por nivel de estratificacion</div></div>
-            <div class="cardBody" id="dash_byLevel"></div>
+            <div class="cardHeader"><div class="cardTitle">Objetivo LDL</div></div>
+            <div class="cardBody cardBody--chart">
+              <canvas id="chartGoalDonut" width="260" height="200"></canvas>
+              <div class="chartLegend" id="legendGoal"></div>
+            </div>
           </div>
           <div class="card">
-            <div class="cardHeader"><div class="cardTitle">Por tratamiento</div></div>
-            <div class="cardBody" id="dash_byTreatment"></div>
+            <div class="cardHeader"><div class="cardTitle">Por nivel de estratificacion</div></div>
+            <div class="cardBody cardBody--chart">
+              <canvas id="chartLevelBar" width="260" height="200"></canvas>
+              <div class="chartLegend" id="legendLevel"></div>
+            </div>
           </div>
           <div class="card">
             <div class="cardHeader"><div class="cardTitle">Por servicio / patologia</div></div>
-            <div class="cardBody" id="dash_byService"></div>
+            <div class="cardBody cardBody--chart">
+              <canvas id="chartServiceBar" width="260" height="200"></canvas>
+            </div>
           </div>
         </div>
 
+        <!-- Row 3: Treatment + LDL trend -->
+        <div class="grid grid2" style="margin-top:14px">
+          <div class="card">
+            <div class="cardHeader"><div class="cardTitle">Por tratamiento (farmaco hospitalario)</div></div>
+            <div class="cardBody cardBody--chart">
+              <canvas id="chartTreatBar" width="400" height="220"></canvas>
+            </div>
+          </div>
+          <div class="card">
+            <div class="cardHeader"><div class="cardTitle">Evolucion LDL media (todos los pacientes)</div></div>
+            <div class="cardBody cardBody--chart">
+              <canvas id="chartLDLTrend" width="400" height="220"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 4: Intervention stats -->
+        <div class="grid grid3" style="margin-top:14px">
+          <div class="card">
+            <div class="cardHeader"><div class="cardTitle">Intervenciones por tipo</div></div>
+            <div class="cardBody cardBody--chart">
+              <canvas id="chartIVType" width="260" height="200"></canvas>
+              <div class="chartLegend" id="legendIVType"></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="cardHeader"><div class="cardTitle">Estado intervenciones</div></div>
+            <div class="cardBody cardBody--chart">
+              <canvas id="chartIVStatus" width="260" height="200"></canvas>
+              <div class="chartLegend" id="legendIVStatus"></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="cardHeader"><div class="cardTitle">Adherencia al tratamiento</div></div>
+            <div class="cardBody cardBody--chart">
+              <canvas id="chartAdherence" width="260" height="200"></canvas>
+              <div class="chartLegend" id="legendAdherence"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 5: Response table -->
         <div class="panel" style="margin-top:14px">
           <div class="panelHeader">
             <div class="panelTitle">Respuesta al tratamiento (valoracion farmaceutica)</div>
