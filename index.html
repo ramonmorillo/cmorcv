@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>CMO Registry — Consultas Externas</title>
+  <title>Herramienta seguimiento CMO para RCV</title>
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
@@ -12,8 +12,8 @@
       <div class="brand">
         <div class="logo">CMO</div>
         <div class="brandText">
-          <div class="brandTitle">CMO Registry</div>
-          <div class="brandSub">Consultas externas · Local-first</div>
+          <div class="brandTitle">Seguimiento CMO</div>
+          <div class="brandSub">Riesgo Cardiovascular · Local-first</div>
         </div>
       </div>
 
@@ -36,8 +36,9 @@
       </nav>
 
       <div class="sidebarFooter">
-        <div class="smallMuted">Datos guardados localmente (IndexedDB).</div>
-        <div class="smallMuted">Recomendado: backup periódico.</div>
+        <div class="smallMuted" style="font-weight:700;color:var(--text)">Creado por Ramon Morillo</div>
+        <div class="smallMuted">Febrero 2026</div>
+        <div class="smallMuted" style="margin-top:6px">Datos guardados localmente (IndexedDB). Backup periodico recomendado.</div>
       </div>
     </aside>
 
@@ -455,17 +456,45 @@
       <section id="aboutView" class="view hidden">
         <div class="panel">
           <div class="panelHeader">
-            <div class="panelTitle">Ayuda rápida</div>
+            <div class="panelTitle">Ayuda rapida</div>
           </div>
           <div class="card">
             <div class="cardBody">
               <ul class="bullets">
                 <li><b>Local-first:</b> los datos se guardan en este navegador (IndexedDB).</li>
                 <li><b>RGPD:</b> usa <b>ID pseudonimizado</b>. No guardes nombre/NIH/telefono.</li>
-                <li><b>Backup:</b> usa “Backup JSON” de forma periódica.</li>
-                <li><b>Investigación:</b> exporta CSV (patients/visits/interventions).</li>
-                <li><b>Estratificación:</b> variables por visita, precarga en sucesivas, score y nivel calculados con cortes fijos.</li>
+                <li><b>Backup:</b> usa "Backup JSON" de forma periodica.</li>
+                <li><b>Investigacion:</b> exporta CSV (patients/visits/interventions).</li>
+                <li><b>Estratificacion:</b> variables por visita, precarga en sucesivas, score y nivel calculados con cortes fijos.</li>
               </ul>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel" style="margin-top:14px">
+          <div class="panelHeader">
+            <div class="panelTitle">Acerca de</div>
+          </div>
+          <div class="card">
+            <div class="cardBody">
+              <p style="margin:0 0 8px;font-weight:800;font-size:15px">Herramienta de seguimiento CMO para Riesgo Cardiovascular (RCV)</p>
+              <p style="margin:0 0 6px;color:var(--muted);font-size:13px">Creado por <b style="color:var(--text)">Ramon Morillo</b> — Febrero 2026</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel" style="margin-top:14px">
+          <div class="panelHeader">
+            <div class="panelTitle">Aviso legal y condiciones de uso</div>
+          </div>
+          <div class="card">
+            <div class="cardBody" style="font-size:12px;line-height:1.55;color:var(--muted)">
+              <p style="margin:0 0 10px"><b style="color:var(--text)">1. Finalidad.</b> Esta herramienta ha sido disenada exclusivamente como apoyo al seguimiento farmacoterapeutico en consultas de atencion farmaceutica hospitalaria. No constituye un producto sanitario ni un sistema de informacion clinica oficial. Su uso es complementario y no sustituye al juicio clinico profesional ni a los sistemas de historia clinica electronica del centro.</p>
+              <p style="margin:0 0 10px"><b style="color:var(--text)">2. Proteccion de datos y RGPD.</b> La herramienta funciona integramente en el navegador del usuario (arquitectura local-first). No se transmiten datos a servidores externos. El usuario es responsable de utilizar unicamente identificadores pseudonimizados y de no almacenar datos de caracter personal (nombre, NHC, telefono, etc.) conforme al Reglamento (UE) 2016/679 (RGPD) y la Ley Organica 3/2018 (LOPDGDD). El responsable del tratamiento de los datos sera, en todo caso, la institucion sanitaria correspondiente.</p>
+              <p style="margin:0 0 10px"><b style="color:var(--text)">3. Sin garantia.</b> La herramienta se proporciona "tal cual" (AS IS), sin garantias de ningun tipo, expresas o implicitas. El autor no se responsabiliza de errores en los calculos de estratificacion, perdida de datos por fallo del navegador o del dispositivo, ni de decisiones clinicas basadas en la informacion mostrada.</p>
+              <p style="margin:0 0 10px"><b style="color:var(--text)">4. Responsabilidad del usuario.</b> El usuario profesional sanitario es el unico responsable de: (a) verificar la exactitud de los datos introducidos; (b) realizar copias de seguridad periodicas; (c) cumplir la normativa de proteccion de datos de su institucion; (d) validar las recomendaciones y estratificaciones con las guias clinicas vigentes.</p>
+              <p style="margin:0 0 10px"><b style="color:var(--text)">5. Propiedad intelectual.</b> Todos los derechos sobre el diseno, codigo y contenido de esta herramienta pertenecen al autor. Se permite su uso con fines asistenciales y de investigacion dentro del marco institucional. Queda prohibida su reproduccion, distribucion o modificacion sin autorizacion expresa del autor.</p>
+              <p style="margin:0"><b style="color:var(--text)">6. Limitacion de responsabilidad.</b> En ningun caso el autor sera responsable de danos directos, indirectos, incidentales o consecuentes derivados del uso o la imposibilidad de uso de esta herramienta, incluyendo pero no limitado a la perdida de datos, interrupcion de la actividad asistencial o decisiones clinicas inadecuadas.</p>
             </div>
           </div>
         </div>
