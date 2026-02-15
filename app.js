@@ -575,63 +575,448 @@ function updateStats() {
   });
 }
 
+// ---------------- Canvas polyfill ----------------
+
+if (!CanvasRenderingContext2D.prototype.roundRect) {
+  CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, radii) {
+    const r = Array.isArray(radii) ? radii : [radii || 0];
+    const tl = r[0] || 0, tr = r[1] !== undefined ? r[1] : tl;
+    const br = r[2] !== undefined ? r[2] : tl, bl = r[3] !== undefined ? r[3] : tr;
+    this.moveTo(x + tl, y);
+    this.lineTo(x + w - tr, y);
+    this.quadraticCurveTo(x + w, y, x + w, y + tr);
+    this.lineTo(x + w, y + h - br);
+    this.quadraticCurveTo(x + w, y + h, x + w - br, y + h);
+    this.lineTo(x + bl, y + h);
+    this.quadraticCurveTo(x, y + h, x, y + h - bl);
+    this.lineTo(x, y + tl);
+    this.quadraticCurveTo(x, y, x + tl, y);
+    this.closePath();
+    return this;
+  };
+}
+
+// ---------------- Dashboard: Chart utilities ----------------
+
+const CHART_COLORS = [
+  "#3b6de0", "#2a9d6e", "#e0873b", "#d63a55", "#8b5cf6",
+  "#06b6d4", "#f59e0b", "#ec4899", "#10b981", "#6366f1",
+];
+
+function _dpr(canvas) {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  if (rect.width > 0) {
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+  }
+  const ctx = canvas.getContext("2d");
+  ctx.scale(dpr, dpr);
+  return { ctx, W: rect.width || canvas.width / dpr, H: rect.height || canvas.height / dpr };
+}
+
+function drawDonutChart(canvasId, legendId, data, title) {
+  const canvas = $(`#${canvasId}`);
+  const { ctx, W, H } = _dpr(canvas);
+  ctx.clearRect(0, 0, W, H);
+
+  const total = data.reduce((s, d) => s + d.value, 0);
+  if (total === 0) {
+    ctx.fillStyle = "rgba(0,0,0,.35)";
+    ctx.font = "14px system-ui";
+    ctx.textAlign = "center";
+    ctx.fillText("Sin datos", W / 2, H / 2);
+    if (legendId) $(`#${legendId}`).innerHTML = "";
+    return;
+  }
+
+  const cx = W / 2, cy = H / 2 - 6;
+  const R = Math.min(cx, cy) - 14;
+  const r = R * 0.55;
+  let startAngle = -Math.PI / 2;
+
+  for (let i = 0; i < data.length; i++) {
+    const slice = (data[i].value / total) * Math.PI * 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, startAngle, startAngle + slice);
+    ctx.arc(cx, cy, r, startAngle + slice, startAngle, true);
+    ctx.closePath();
+    ctx.fillStyle = data[i].color || CHART_COLORS[i % CHART_COLORS.length];
+    ctx.fill();
+    startAngle += slice;
+  }
+
+  // Center text
+  ctx.fillStyle = "var(--text, #1a2332)";
+  ctx.font = "bold 22px system-ui";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(String(total), cx, cy - 4);
+  ctx.font = "11px system-ui";
+  ctx.fillStyle = "rgba(0,0,0,.50)";
+  ctx.fillText(title || "total", cx, cy + 14);
+
+  // Legend
+  if (legendId) {
+    $(`#${legendId}`).innerHTML = data
+      .map(
+        (d, i) =>
+          `<span class="legendItem"><span class="legendDot" style="background:${d.color || CHART_COLORS[i % CHART_COLORS.length]}"></span>${esc(d.label)} <b>${d.value}</b> (${total ? Math.round((d.value / total) * 100) : 0}%)</span>`
+      )
+      .join("");
+  }
+}
+
+function drawBarChart(canvasId, data, { horizontal = false, showValues = true } = {}) {
+  const canvas = $(`#${canvasId}`);
+  const { ctx, W, H } = _dpr(canvas);
+  ctx.clearRect(0, 0, W, H);
+
+  if (!data.length) {
+    ctx.fillStyle = "rgba(0,0,0,.35)";
+    ctx.font = "14px system-ui";
+    ctx.textAlign = "center";
+    ctx.fillText("Sin datos", W / 2, H / 2);
+    return;
+  }
+
+  const maxVal = Math.max(...data.map((d) => d.value), 1);
+
+  if (horizontal) {
+    const barH = Math.min(28, (H - 10) / data.length - 6);
+    const labelW = 110;
+    const chartW = W - labelW - 40;
+
+    for (let i = 0; i < data.length; i++) {
+      const y = 8 + i * (barH + 6);
+      const bw = (data[i].value / maxVal) * chartW;
+
+      // Label
+      ctx.fillStyle = "rgba(0,0,0,.60)";
+      ctx.font = "11px system-ui";
+      ctx.textAlign = "right";
+      ctx.textBaseline = "middle";
+      const label = data[i].label.length > 16 ? data[i].label.slice(0, 15) + "…" : data[i].label;
+      ctx.fillText(label, labelW - 6, y + barH / 2);
+
+      // Bar
+      ctx.beginPath();
+      const radius = Math.min(6, barH / 2);
+      ctx.roundRect(labelW, y, Math.max(bw, 2), barH, [radius]);
+      ctx.fillStyle = data[i].color || CHART_COLORS[i % CHART_COLORS.length];
+      ctx.fill();
+
+      // Value
+      if (showValues) {
+        ctx.fillStyle = "rgba(0,0,0,.70)";
+        ctx.font = "bold 11px system-ui";
+        ctx.textAlign = "left";
+        ctx.fillText(String(data[i].value), labelW + bw + 6, y + barH / 2);
+      }
+    }
+  } else {
+    // Vertical bars
+    const padB = 40, padT = 16, padL = 30, padR = 10;
+    const chartH = H - padT - padB;
+    const chartW = W - padL - padR;
+    const barW = Math.min(40, chartW / data.length - 8);
+    const gap = (chartW - barW * data.length) / (data.length + 1);
+
+    // Y-axis grid
+    ctx.strokeStyle = "rgba(0,0,0,.06)";
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 4; i++) {
+      const y = padT + (chartH * i) / 4;
+      ctx.beginPath();
+      ctx.moveTo(padL, y);
+      ctx.lineTo(W - padR, y);
+      ctx.stroke();
+      ctx.fillStyle = "rgba(0,0,0,.40)";
+      ctx.font = "10px system-ui";
+      ctx.textAlign = "right";
+      ctx.fillText(String(Math.round(maxVal - (maxVal * i) / 4)), padL - 4, y + 3);
+    }
+
+    for (let i = 0; i < data.length; i++) {
+      const x = padL + gap + i * (barW + gap);
+      const bh = (data[i].value / maxVal) * chartH;
+      const y = padT + chartH - bh;
+
+      ctx.beginPath();
+      const radius = Math.min(6, barW / 2);
+      ctx.roundRect(x, y, barW, bh, [radius, radius, 0, 0]);
+      ctx.fillStyle = data[i].color || CHART_COLORS[i % CHART_COLORS.length];
+      ctx.fill();
+
+      // Value on top
+      if (showValues && data[i].value > 0) {
+        ctx.fillStyle = "rgba(0,0,0,.70)";
+        ctx.font = "bold 11px system-ui";
+        ctx.textAlign = "center";
+        ctx.fillText(String(data[i].value), x + barW / 2, y - 5);
+      }
+
+      // Label below
+      ctx.save();
+      ctx.translate(x + barW / 2, H - padB + 8);
+      ctx.rotate(-0.45);
+      ctx.fillStyle = "rgba(0,0,0,.55)";
+      ctx.font = "10px system-ui";
+      ctx.textAlign = "right";
+      const lbl = data[i].label.length > 12 ? data[i].label.slice(0, 11) + "…" : data[i].label;
+      ctx.fillText(lbl, 0, 0);
+      ctx.restore();
+    }
+  }
+}
+
+function drawLineChart(canvasId, seriesData, { yLabel = "", xLabels = [] } = {}) {
+  const canvas = $(`#${canvasId}`);
+  const { ctx, W, H } = _dpr(canvas);
+  ctx.clearRect(0, 0, W, H);
+
+  if (!seriesData.length) {
+    ctx.fillStyle = "rgba(0,0,0,.35)";
+    ctx.font = "14px system-ui";
+    ctx.textAlign = "center";
+    ctx.fillText("Sin datos de LDL longitudinal", W / 2, H / 2);
+    return;
+  }
+
+  const padL = 44, padR = 14, padT = 14, padB = 36;
+  const cw = W - padL - padR, ch = H - padT - padB;
+
+  const allVals = seriesData.map((d) => d.value);
+  const minV = Math.min(...allVals);
+  const maxV = Math.max(...allVals);
+  const range = Math.max(10, maxV - minV);
+  const yMin = Math.max(0, minV - range * 0.12);
+  const yMax = maxV + range * 0.12;
+
+  // Grid
+  ctx.strokeStyle = "rgba(0,0,0,.06)";
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 5; i++) {
+    const y = padT + (ch * i) / 5;
+    ctx.beginPath();
+    ctx.moveTo(padL, y);
+    ctx.lineTo(W - padR, y);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(0,0,0,.42)";
+    ctx.font = "10px system-ui";
+    ctx.textAlign = "right";
+    ctx.fillText(String(Math.round(yMax - ((yMax - yMin) * i) / 5)), padL - 5, y + 3);
+  }
+
+  // Area fill
+  const n = seriesData.length;
+  const points = seriesData.map((d, i) => ({
+    x: padL + (cw * i) / Math.max(n - 1, 1),
+    y: padT + ch * (1 - (d.value - yMin) / (yMax - yMin)),
+  }));
+
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, padT + ch);
+  for (const p of points) ctx.lineTo(p.x, p.y);
+  ctx.lineTo(points[points.length - 1].x, padT + ch);
+  ctx.closePath();
+  ctx.fillStyle = "rgba(59,109,224,.10)";
+  ctx.fill();
+
+  // Line
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, points[0].y);
+  for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+  ctx.strokeStyle = "rgba(59,109,224,.85)";
+  ctx.lineWidth = 2.5;
+  ctx.lineJoin = "round";
+  ctx.stroke();
+
+  // Dots
+  for (const p of points) {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 3.5, 0, Math.PI * 2);
+    ctx.fillStyle = "#3b6de0";
+    ctx.fill();
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+
+  // X labels
+  const labelIdxs =
+    n <= 6 ? seriesData.map((_, i) => i) : [0, Math.floor(n / 4), Math.floor(n / 2), Math.floor((3 * n) / 4), n - 1];
+  ctx.fillStyle = "rgba(0,0,0,.45)";
+  ctx.font = "10px system-ui";
+  ctx.textAlign = "center";
+  for (const i of labelIdxs) {
+    const lbl = xLabels[i] || seriesData[i].label || "";
+    ctx.fillText(lbl, points[i].x, H - 8);
+  }
+
+  // Y label
+  if (yLabel) {
+    ctx.save();
+    ctx.translate(10, padT + ch / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillStyle = "rgba(0,0,0,.40)";
+    ctx.font = "10px system-ui";
+    ctx.textAlign = "center";
+    ctx.fillText(yLabel, 0, 0);
+    ctx.restore();
+  }
+}
+
 // ---------------- Dashboard ----------------
 
 function renderDashboard() {
   const patients = APP.state.patients;
   const active = patients.filter((p) => p.status !== "inactive");
+  const allVisits = APP.state.visits;
+  const allInterventions = APP.state.interventions;
 
-  // Summary cards
+  // === Summary cards ===
   const withVisits = active.filter((p) => patientLastVisit(p.patientId));
   const goalYes = active.filter((p) => {
     const last = patientLastVisit(p.patientId);
     return last && last.ldlGoalAchieved === true;
   });
+  const goalNo = active.filter((p) => {
+    const last = patientLastVisit(p.patientId);
+    return last && last.ldlGoalAchieved === false;
+  });
+  const pendingIV = allInterventions.filter((iv) => iv.status === "pending" || iv.status === "pendiente");
 
   $("#dash_active").textContent = String(active.length);
+  $("#dash_activePct").textContent = patients.length ? `de ${patients.length} registrados` : "";
   $("#dash_withVisits").textContent = String(withVisits.length);
+  $("#dash_withVisitsPct").textContent = active.length
+    ? `${Math.round((withVisits.length / active.length) * 100)}% de activos`
+    : "";
   $("#dash_goalYes").textContent = String(goalYes.length);
+  $("#dash_goalYesPct").textContent = withVisits.length
+    ? `${Math.round((goalYes.length / withVisits.length) * 100)}% de visitados`
+    : "";
+  $("#dash_pendingIV").textContent = String(pendingIV.length);
+  $("#dash_pendingIVHint").textContent = pendingIV.length === 1 ? "intervencion" : "intervenciones";
 
-  // By stratification level (prefer last visit level, fallback to patient)
+  // === Chart: LDL Goal donut ===
+  const goalNd = withVisits.length - goalYes.length - goalNo.length;
+  drawDonutChart("chartGoalDonut", "legendGoal", [
+    { label: "Alcanzado", value: goalYes.length, color: "#2a9d6e" },
+    { label: "No alcanzado", value: goalNo.length, color: "#d63a55" },
+    { label: "Sin dato", value: goalNd, color: "#cbd5e1" },
+  ], "pacientes");
+
+  // === Chart: Stratification levels bar ===
   const byLevel = { 1: 0, 2: 0, 3: 0 };
   for (const p of active) {
     const last = patientLastVisit(p.patientId);
     const lvl = (last && last.priorityLevel) || p.priorityLevel || 3;
     byLevel[lvl] = (byLevel[lvl] || 0) + 1;
   }
-  $("#dash_byLevel").innerHTML =
-    `<div class="kv">` +
-    `<div class="k">Nivel 1 (alta)</div><div class="v">${byLevel[1]}</div>` +
-    `<div class="k">Nivel 2 (media)</div><div class="v">${byLevel[2]}</div>` +
-    `<div class="k">Nivel 3 (baja)</div><div class="v">${byLevel[3]}</div>` +
-    `</div>`;
+  drawDonutChart("chartLevelBar", "legendLevel", [
+    { label: "Nivel 1 (alta)", value: byLevel[1], color: "#d63a55" },
+    { label: "Nivel 2 (media)", value: byLevel[2], color: "#e0873b" },
+    { label: "Nivel 3 (baja)", value: byLevel[3], color: "#2a9d6e" },
+  ], "pacientes");
 
-  // By treatment (last visit hospital drug)
-  const byTreat = {};
-  for (const p of active) {
-    const last = patientLastVisit(p.patientId);
-    const drug = (last && last.hospitalDrug) || "Sin visita";
-    byTreat[drug] = (byTreat[drug] || 0) + 1;
-  }
-  const treatEntries = Object.entries(byTreat).sort((a, b) => b[1] - a[1]);
-  $("#dash_byTreatment").innerHTML =
-    `<div class="kv">` +
-    treatEntries.map(([k, v]) => `<div class="k">${esc(k)}</div><div class="v">${v}</div>`).join("") +
-    `</div>`;
-
-  // By service / prevalent condition
+  // === Chart: By service / pathology (horizontal bars) ===
   const bySvc = {};
   for (const p of active) {
     const svc = p.prevalentCondition || "Sin asignar";
     bySvc[svc] = (bySvc[svc] || 0) + 1;
   }
-  const svcEntries = Object.entries(bySvc).sort((a, b) => b[1] - a[1]);
-  $("#dash_byService").innerHTML =
-    `<div class="kv">` +
-    svcEntries.map(([k, v]) => `<div class="k">${esc(k)}</div><div class="v">${v}</div>`).join("") +
-    `</div>`;
+  const svcEntries = Object.entries(bySvc).sort((a, b) => b[1] - a[1]).slice(0, 8);
+  drawBarChart("chartServiceBar", svcEntries.map(([k, v], i) => ({
+    label: k, value: v, color: CHART_COLORS[i % CHART_COLORS.length],
+  })), { horizontal: true });
 
-  // Response table
+  // === Chart: By treatment (vertical bars) ===
+  const byTreat = {};
+  for (const p of active) {
+    const last = patientLastVisit(p.patientId);
+    const drug = (last && last.hospitalDrug) || "Sin visita";
+    if (drug !== "—") byTreat[drug] = (byTreat[drug] || 0) + 1;
+  }
+  const treatEntries = Object.entries(byTreat).sort((a, b) => b[1] - a[1]).slice(0, 8);
+  drawBarChart("chartTreatBar", treatEntries.map(([k, v], i) => ({
+    label: k, value: v, color: CHART_COLORS[i % CHART_COLORS.length],
+  })), { horizontal: true });
+
+  // === Chart: LDL trend (average per visit ordinal) ===
+  const patientVisitSeries = {};
+  for (const v of allVisits) {
+    if (v.ldl == null) continue;
+    const ldl = Number(v.ldl);
+    if (!Number.isFinite(ldl)) continue;
+    if (!patientVisitSeries[v.patientId]) patientVisitSeries[v.patientId] = [];
+    patientVisitSeries[v.patientId].push({ date: v.date, ldl });
+  }
+  // Sort each patient's visits by date
+  for (const pid of Object.keys(patientVisitSeries)) {
+    patientVisitSeries[pid].sort((a, b) => (a.date > b.date ? 1 : -1));
+  }
+  // Compute average LDL per visit ordinal (V1, V2, V3...)
+  const maxVisitCount = Math.max(0, ...Object.values(patientVisitSeries).map((s) => s.length));
+  const ldlTrendData = [];
+  for (let i = 0; i < Math.min(maxVisitCount, 12); i++) {
+    let sum = 0, count = 0;
+    for (const pid of Object.keys(patientVisitSeries)) {
+      if (patientVisitSeries[pid][i]) {
+        sum += patientVisitSeries[pid][i].ldl;
+        count++;
+      }
+    }
+    if (count > 0) {
+      ldlTrendData.push({ label: `V${i + 1}`, value: Math.round(sum / count) });
+    }
+  }
+  drawLineChart("chartLDLTrend", ldlTrendData, { yLabel: "LDL medio (mg/dL)" });
+
+  // === Chart: Interventions by type (Capacidad / Motivacion / Oportunidad) ===
+  const ivByType = { Capacidad: 0, Motivacion: 0, Oportunidad: 0 };
+  for (const iv of allInterventions) {
+    const dim = iv.cmoDimension || iv.dimension || iv.type || "";
+    if (dim.toLowerCase().includes("capac")) ivByType.Capacidad++;
+    else if (dim.toLowerCase().includes("motiv")) ivByType.Motivacion++;
+    else if (dim.toLowerCase().includes("oport")) ivByType.Oportunidad++;
+  }
+  drawDonutChart("chartIVType", "legendIVType", [
+    { label: "Capacidad", value: ivByType.Capacidad, color: "#3b6de0" },
+    { label: "Motivacion", value: ivByType.Motivacion, color: "#8b5cf6" },
+    { label: "Oportunidad", value: ivByType.Oportunidad, color: "#06b6d4" },
+  ], "intervenciones");
+
+  // === Chart: Intervention status ===
+  const ivByStatus = { accepted: 0, pending: 0, rejected: 0 };
+  for (const iv of allInterventions) {
+    const st = (iv.status || "").toLowerCase();
+    if (st === "accepted" || st === "aceptada") ivByStatus.accepted++;
+    else if (st === "pending" || st === "pendiente") ivByStatus.pending++;
+    else if (st === "rejected" || st === "rechazada") ivByStatus.rejected++;
+  }
+  drawDonutChart("chartIVStatus", "legendIVStatus", [
+    { label: "Aceptadas", value: ivByStatus.accepted, color: "#2a9d6e" },
+    { label: "Pendientes", value: ivByStatus.pending, color: "#f59e0b" },
+    { label: "Rechazadas", value: ivByStatus.rejected, color: "#d63a55" },
+  ], "intervenciones");
+
+  // === Chart: Adherence ===
+  const adherenceMap = {};
+  for (const p of active) {
+    const last = patientLastVisit(p.patientId);
+    if (!last) continue;
+    const adh = last.adherence || last.adherencia || "Sin dato";
+    adherenceMap[adh] = (adherenceMap[adh] || 0) + 1;
+  }
+  const adhColors = { "Buena": "#2a9d6e", "Regular": "#f59e0b", "Mala": "#d63a55", "Sin dato": "#cbd5e1" };
+  const adhData = Object.entries(adherenceMap).map(([k, v]) => ({
+    label: k, value: v, color: adhColors[k] || "#94a3b8",
+  }));
+  drawDonutChart("chartAdherence", "legendAdherence", adhData, "pacientes");
+
+  // === Response table ===
   const tbody = $("#dash_responseBody");
   tbody.innerHTML = "";
   for (const p of active) {
