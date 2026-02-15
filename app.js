@@ -1,4 +1,7 @@
-/* CMO Registry — Local-first (IndexedDB) — GitHub Pages friendly
+/* Herramienta de seguimiento CMO para Riesgo Cardiovascular (RCV)
+   Creado por Ramon Morillo — Febrero 2026
+   ---
+   Local-first (IndexedDB) — GitHub Pages friendly
    - Patients, Visits, Interventions
    - Stratification variables per visit (prefill from last visit)
    - Cutoffs fixed: >=23 => Level 1, >=17 => Level 2, else Level 3
