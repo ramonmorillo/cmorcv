@@ -343,6 +343,12 @@ function toast(msg) {
   setTimeout(() => el.classList.add("hidden"), 2600);
 }
 
+function esc(s) {
+  const d = document.createElement("div");
+  d.textContent = s;
+  return d.innerHTML;
+}
+
 function todayISO() {
   const d = new Date();
   const yyyy = d.getFullYear();
@@ -516,6 +522,7 @@ function setView(viewId) {
 
   const titleMap = {
     patientsView: ["Pacientes", "Registro longitudinal con CMO + exportación para investigación"],
+    dashboardView: ["Dashboard", "Indicadores de seguimiento, estratificación y respuesta"],
     exportsView: ["Exportación", "CSV (Excel) + Backup JSON + restauración"],
     aboutView: ["Ayuda", "Buenas prácticas (local-first, RGPD, backups)"],
   };
@@ -525,6 +532,8 @@ function setView(viewId) {
 
   if (viewId !== "patientsView") $("#btnNewPatient").classList.add("hidden");
   else $("#btnNewPatient").classList.remove("hidden");
+
+  if (viewId === "dashboardView") renderDashboard();
 }
 
 // ---------------- UI: selectors ----------------
@@ -562,6 +571,87 @@ function updateStats() {
   dbGetMeta("lastBackupAt").then((v) => {
     $("#statLastBackup").textContent = v ? String(v) : "—";
   });
+}
+
+// ---------------- Dashboard ----------------
+
+function renderDashboard() {
+  const patients = APP.state.patients;
+  const active = patients.filter((p) => p.status !== "inactive");
+
+  // Summary cards
+  const withVisits = active.filter((p) => patientLastVisit(p.patientId));
+  const goalYes = active.filter((p) => {
+    const last = patientLastVisit(p.patientId);
+    return last && last.ldlGoalAchieved === true;
+  });
+
+  $("#dash_active").textContent = String(active.length);
+  $("#dash_withVisits").textContent = String(withVisits.length);
+  $("#dash_goalYes").textContent = String(goalYes.length);
+
+  // By stratification level
+  const byLevel = { 1: 0, 2: 0, 3: 0 };
+  for (const p of active) {
+    const lvl = p.priorityLevel || 3;
+    byLevel[lvl] = (byLevel[lvl] || 0) + 1;
+  }
+  $("#dash_byLevel").innerHTML =
+    `<div class="kv">` +
+    `<div class="k">Nivel 1 (alta)</div><div class="v">${byLevel[1]}</div>` +
+    `<div class="k">Nivel 2 (media)</div><div class="v">${byLevel[2]}</div>` +
+    `<div class="k">Nivel 3 (baja)</div><div class="v">${byLevel[3]}</div>` +
+    `</div>`;
+
+  // By treatment (last visit hospital drug)
+  const byTreat = {};
+  for (const p of active) {
+    const last = patientLastVisit(p.patientId);
+    const drug = (last && last.hospitalDrug) || "Sin visita";
+    byTreat[drug] = (byTreat[drug] || 0) + 1;
+  }
+  const treatEntries = Object.entries(byTreat).sort((a, b) => b[1] - a[1]);
+  $("#dash_byTreatment").innerHTML =
+    `<div class="kv">` +
+    treatEntries.map(([k, v]) => `<div class="k">${esc(k)}</div><div class="v">${v}</div>`).join("") +
+    `</div>`;
+
+  // By service / prevalent condition
+  const bySvc = {};
+  for (const p of active) {
+    const svc = p.prevalentCondition || "Sin asignar";
+    bySvc[svc] = (bySvc[svc] || 0) + 1;
+  }
+  const svcEntries = Object.entries(bySvc).sort((a, b) => b[1] - a[1]);
+  $("#dash_byService").innerHTML =
+    `<div class="kv">` +
+    svcEntries.map(([k, v]) => `<div class="k">${esc(k)}</div><div class="v">${v}</div>`).join("") +
+    `</div>`;
+
+  // Response table
+  const tbody = $("#dash_responseBody");
+  tbody.innerHTML = "";
+  for (const p of active) {
+    const last = patientLastVisit(p.patientId);
+    const drug = last ? (last.hospitalDrug || "—") : "—";
+    const ldl = last && last.ldl != null ? String(last.ldl) : "—";
+    const target = last && last.ldlTarget != null ? String(last.ldlTarget) : "—";
+    const goal = last ? last.ldlGoalAchieved : null;
+    const goalLabel = goal === true ? "Si" : goal === false ? "No" : "—";
+    const goalClass = goal === true ? "ok" : goal === false ? "no" : "";
+    const lvl = p.priorityLevel || 3;
+
+    const tr = document.createElement("tr");
+    tr.innerHTML =
+      `<td>${esc(p.patientId)}</td>` +
+      `<td>${esc(p.prevalentCondition || "—")}</td>` +
+      `<td>Nivel ${lvl}</td>` +
+      `<td>${esc(drug)}</td>` +
+      `<td>${ldl}</td>` +
+      `<td>${target}</td>` +
+      `<td><span class="chip ${goalClass}">${goalLabel}</span></td>`;
+    tbody.appendChild(tr);
+  }
 }
 
 function matchesSearch(p, q) {

@@ -21,6 +21,9 @@
         <button class="navBtn active" data-view="patientsView">
           <span class="navIcon">👥</span><span>Pacientes</span>
         </button>
+        <button class="navBtn" data-view="dashboardView">
+          <span class="navIcon">📊</span><span>Dashboard</span>
+        </button>
         <button class="navBtn" data-view="exportsView">
           <span class="navIcon">📤</span><span>Exportación</span>
         </button>
@@ -198,6 +201,60 @@
             </div>
           </div>
 
+        </div>
+      </section>
+
+      <section id="dashboardView" class="view hidden">
+        <div class="dashRow">
+          <div class="miniCard">
+            <div class="miniLabel">En seguimiento activo</div>
+            <div class="miniValue" id="dash_active">0</div>
+          </div>
+          <div class="miniCard">
+            <div class="miniLabel">Con visitas registradas</div>
+            <div class="miniValue" id="dash_withVisits">0</div>
+          </div>
+          <div class="miniCard">
+            <div class="miniLabel">Objetivo LDL alcanzado</div>
+            <div class="miniValue" id="dash_goalYes">0</div>
+          </div>
+        </div>
+
+        <div class="grid">
+          <div class="card">
+            <div class="cardHeader"><div class="cardTitle">Por nivel de estratificacion</div></div>
+            <div class="cardBody" id="dash_byLevel"></div>
+          </div>
+          <div class="card">
+            <div class="cardHeader"><div class="cardTitle">Por tratamiento</div></div>
+            <div class="cardBody" id="dash_byTreatment"></div>
+          </div>
+          <div class="card">
+            <div class="cardHeader"><div class="cardTitle">Por servicio / patologia</div></div>
+            <div class="cardBody" id="dash_byService"></div>
+          </div>
+        </div>
+
+        <div class="panel" style="margin-top:14px">
+          <div class="panelHeader">
+            <div class="panelTitle">Respuesta al tratamiento (valoracion farmaceutica)</div>
+          </div>
+          <div class="tableWrap">
+            <table class="table" id="dash_responseTable">
+              <thead>
+                <tr>
+                  <th>Paciente</th>
+                  <th>Patologia</th>
+                  <th>Nivel</th>
+                  <th>Farmaco</th>
+                  <th>LDL ultimo</th>
+                  <th>Objetivo</th>
+                  <th>Respuesta</th>
+                </tr>
+              </thead>
+              <tbody id="dash_responseBody"></tbody>
+            </table>
+          </div>
         </div>
       </section>
 
