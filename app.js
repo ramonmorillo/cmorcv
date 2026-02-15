@@ -856,6 +856,9 @@ function resetPatientForm() {
   $("#p_comorb").value = "";
   $("#p_notes").value = "";
   $("#p_status").value = "active";
+  $("#p_score").value = "0";
+  $("#p_levelAuto").value = "Nivel 3";
+  buildStratVarsPicker({});
 }
 
 async function savePatient() {
@@ -871,6 +874,10 @@ async function savePatient() {
     return toast("Año de nacimiento inválido.");
   }
 
+  const stratVars = getStratSelections();
+  const score = computeStratScore(stratVars);
+  const priorityLevel = levelFromScoreWithOverrides(score, stratVars);
+
   const p = {
     patientId,
     prevalentCondition,
@@ -879,6 +886,9 @@ async function savePatient() {
     comorbidities: ($("#p_comorb").value || "").trim() || null,
     notes: ($("#p_notes").value || "").trim() || null,
     status: $("#p_status").value || "active",
+    stratVars,
+    cmoScore: score,
+    priorityLevel,
     createdAt: new Date().toISOString(),
     schemaVersion: APP.schemaVersion,
   };
@@ -980,14 +990,14 @@ function updateStratScoreUI() {
     ptsEl.textContent = `${pts} pts`;
   }
   const total = computeStratScore(selections);
-  $("#v_score").value = String(total);
+  $("#p_score").value = String(total);
 }
 
 function autoFillLevelFromScore() {
   const selections = getStratSelections();
-  const score = safeNum($("#v_score").value) ?? 0;
+  const score = safeNum($("#p_score").value) ?? 0;
   const lvl = levelFromScoreWithOverrides(score, selections);
-  $("#v_levelAuto").value = `Nivel ${lvl}`;
+  $("#p_levelAuto").value = `Nivel ${lvl}`;
 }
 
 // ---------------- Interventions UI ----------------
@@ -1061,14 +1071,11 @@ function resetVisitForm(defaults = {}) {
   $("#v_treatment").value = "";
   $("#v_adherence").value = "";
   $("#v_ram").value = "";
-  $("#v_score").value = "0";
-  $("#v_levelAuto").value = "Nivel 3";
   $("#v_levelWhy").value = "";
   $("#v_oft").value = "";
   $("#v_follow").value = "";
   $("#v_hcText").value = "";
 
-  buildStratVarsPicker(defaults.stratVars || {});
   buildInterventionsPicker();
 
   if (defaults.hospitalDrug) $("#v_hospDrug").value = defaults.hospitalDrug;
@@ -1087,7 +1094,6 @@ function getDefaultsFromLastVisit(patientId) {
     treatment: last.treatment ?? null,
     adherence: last.adherence ?? null,
     ram: last.ram ?? null,
-    stratVars: last.stratVars || {}, // precarga variables
   };
 }
 
@@ -1137,7 +1143,7 @@ function generateHCFromForm() {
   const patient = APP.state.patients.find((p) => p.patientId === patientId);
   if (!patient) return toast("Paciente no encontrado.");
 
-  const stratVars = getStratSelections();
+  const stratVars = (patient && patient.stratVars) || {};
   const score = computeStratScore(stratVars);
   const lvl = levelFromScoreWithOverrides(score, stratVars);
 
@@ -1162,9 +1168,6 @@ function generateHCFromForm() {
   const tempVisitId = `TEMP-${patientId}-${visit.date}`;
   const interventions = collectInterventionsFromPicker(patientId, tempVisitId);
 
-  $("#v_score").value = String(score);
-  $("#v_levelAuto").value = `Nivel ${lvl}`;
-
   $("#v_hcText").value = generateHCText(patient, visit, interventions);
   toast("Texto HC generado.");
 }
@@ -1187,7 +1190,8 @@ async function saveVisit() {
   const date = $("#v_date").value;
   if (!date) return toast("Fecha obligatoria.");
 
-  const stratVars = getStratSelections();
+  const patient = APP.state.patients.find((p) => p.patientId === patientId);
+  const stratVars = (patient && patient.stratVars) || {};
   const score = computeStratScore(stratVars);
   const priorityLevel = levelFromScoreWithOverrides(score, stratVars);
 
