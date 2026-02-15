@@ -284,7 +284,7 @@
       <!-- Modal: New Patient -->
       <div class="modal hidden" id="modalPatient">
         <div class="modalBackdrop" data-close="modalPatient"></div>
-        <div class="modalCard">
+        <div class="modalCard modalWide">
           <div class="modalHeader">
             <div class="modalTitle">Nuevo paciente</div>
             <button class="iconBtn" data-close="modalPatient">✕</button>
@@ -333,6 +333,22 @@
                   <option value="active">Activo</option>
                   <option value="inactive">Inactivo</option>
                 </select>
+              </div>
+
+              <div class="field">
+                <label>Score estratificación</label>
+                <input class="input" id="p_score" readonly />
+              </div>
+
+              <div class="field">
+                <label>Nivel/Prioridad (auto)</label>
+                <input class="input" id="p_levelAuto" readonly />
+              </div>
+
+              <div class="field span2">
+                <label>Estratificación CMO — variables basales</label>
+                <div class="interventionsWrap" id="stratVarsPicker"></div>
+                <div class="smallMuted">El score y nivel se recalculan al cambiar cualquier variable.</div>
               </div>
             </div>
           </div>
@@ -399,16 +415,6 @@
                 <input class="input" id="v_ram" placeholder="Ej. reacción local, mialgias..." />
               </div>
 
-              <div class="field">
-                <label>Score estratificación</label>
-                <input class="input" id="v_score" readonly />
-              </div>
-
-              <div class="field">
-                <label>Nivel/Prioridad (auto)</label>
-                <input class="input" id="v_levelAuto" readonly />
-              </div>
-
               <div class="field span2">
                 <label>Justificación nivel (breve)</label>
                 <input class="input" id="v_levelWhy" placeholder="Ej. No objetivo + cambios + baja adherencia..." />
@@ -422,12 +428,6 @@
               <div class="field span2">
                 <label>Plan de seguimiento</label>
                 <textarea class="textarea" id="v_follow" rows="2"></textarea>
-              </div>
-
-              <div class="field span2">
-                <label>Estratificación (tabla) — variables por visita (precargadas de la previa)</label>
-                <div class="interventionsWrap" id="stratVarsPicker"></div>
-                <div class="smallMuted">El score y nivel se recalculan al cambiar cualquier variable.</div>
               </div>
 
               <div class="field span2">
