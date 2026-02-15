@@ -24,6 +24,9 @@
         <button class="navBtn" data-view="dashboardView">
           <span class="navIcon">📊</span><span>Dashboard</span>
         </button>
+        <button class="navBtn" data-view="interventionsView">
+          <span class="navIcon">💊</span><span>Intervenciones</span>
+        </button>
         <button class="navBtn" data-view="exportsView">
           <span class="navIcon">📤</span><span>Exportación</span>
         </button>
@@ -253,6 +256,76 @@
                 </tr>
               </thead>
               <tbody id="dash_responseBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section id="interventionsView" class="view hidden">
+        <div class="dashRow">
+          <div class="miniCard">
+            <div class="miniLabel">Total intervenciones</div>
+            <div class="miniValue" id="iv_total">0</div>
+          </div>
+          <div class="miniCard">
+            <div class="miniLabel">Aceptadas</div>
+            <div class="miniValue" id="iv_accepted" style="color:var(--accent2)">0</div>
+          </div>
+          <div class="miniCard">
+            <div class="miniLabel">Pendientes</div>
+            <div class="miniValue" id="iv_pending" style="color:var(--accent)">0</div>
+          </div>
+        </div>
+        <div class="dashRow">
+          <div class="miniCard">
+            <div class="miniLabel">Rechazadas</div>
+            <div class="miniValue" id="iv_rejected" style="color:var(--danger)">0</div>
+          </div>
+          <div class="miniCard">
+            <div class="miniLabel">Tasa de aceptacion</div>
+            <div class="miniValue" id="iv_rate">—</div>
+          </div>
+          <div class="miniCard">
+            <div class="miniLabel">Pacientes con intervenciones</div>
+            <div class="miniValue" id="iv_patients">0</div>
+          </div>
+        </div>
+
+        <div class="grid">
+          <div class="card">
+            <div class="cardHeader"><div class="cardTitle">Por dimension CMO</div></div>
+            <div class="cardBody" id="iv_byDimension"></div>
+          </div>
+          <div class="card span2">
+            <div class="cardHeader"><div class="cardTitle">Por tipo de intervencion</div></div>
+            <div class="cardBody" id="iv_byType"></div>
+          </div>
+        </div>
+
+        <div class="panel" style="margin-top:14px">
+          <div class="panelHeader">
+            <div class="panelTitle">Listado de intervenciones</div>
+            <div class="panelActions">
+              <select id="ivFilterStatus" class="select" style="width:auto">
+                <option value="">Todos los estados</option>
+                <option value="accepted">Aceptadas</option>
+                <option value="pending">Pendientes</option>
+                <option value="rejected">Rechazadas</option>
+              </select>
+            </div>
+          </div>
+          <div class="tableWrap">
+            <table class="table" id="iv_table">
+              <thead>
+                <tr>
+                  <th>Paciente</th>
+                  <th>Fecha visita</th>
+                  <th>Dimension</th>
+                  <th>Intervencion</th>
+                  <th>Estado</th>
+                </tr>
+              </thead>
+              <tbody id="iv_tbody"></tbody>
             </table>
           </div>
         </div>

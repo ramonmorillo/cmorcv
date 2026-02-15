@@ -523,6 +523,7 @@ function setView(viewId) {
   const titleMap = {
     patientsView: ["Pacientes", "Registro longitudinal con CMO + exportación para investigación"],
     dashboardView: ["Dashboard", "Indicadores de seguimiento, estratificación y respuesta"],
+    interventionsView: ["Intervenciones", "Registro de intervenciones CMO por paciente y estado"],
     exportsView: ["Exportación", "CSV (Excel) + Backup JSON + restauración"],
     aboutView: ["Ayuda", "Buenas prácticas (local-first, RGPD, backups)"],
   };
@@ -534,6 +535,7 @@ function setView(viewId) {
   else $("#btnNewPatient").classList.remove("hidden");
 
   if (viewId === "dashboardView") renderDashboard();
+  if (viewId === "interventionsView") renderInterventions();
 }
 
 // ---------------- UI: selectors ----------------
@@ -590,10 +592,11 @@ function renderDashboard() {
   $("#dash_withVisits").textContent = String(withVisits.length);
   $("#dash_goalYes").textContent = String(goalYes.length);
 
-  // By stratification level
+  // By stratification level (prefer last visit level, fallback to patient)
   const byLevel = { 1: 0, 2: 0, 3: 0 };
   for (const p of active) {
-    const lvl = p.priorityLevel || 3;
+    const last = patientLastVisit(p.patientId);
+    const lvl = (last && last.priorityLevel) || p.priorityLevel || 3;
     byLevel[lvl] = (byLevel[lvl] || 0) + 1;
   }
   $("#dash_byLevel").innerHTML =
@@ -639,7 +642,7 @@ function renderDashboard() {
     const goal = last ? last.ldlGoalAchieved : null;
     const goalLabel = goal === true ? "Si" : goal === false ? "No" : "—";
     const goalClass = goal === true ? "ok" : goal === false ? "no" : "";
-    const lvl = p.priorityLevel || 3;
+    const lvl = (last && last.priorityLevel) || p.priorityLevel || 3;
 
     const tr = document.createElement("tr");
     tr.innerHTML =
@@ -650,6 +653,86 @@ function renderDashboard() {
       `<td>${ldl}</td>` +
       `<td>${target}</td>` +
       `<td><span class="chip ${goalClass}">${goalLabel}</span></td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+// ---------------- Interventions view ----------------
+
+function renderInterventions(statusFilter) {
+  const all = APP.state.interventions;
+  const accepted = all.filter((i) => i.status === "accepted");
+  const pending = all.filter((i) => i.status === "pending");
+  const rejected = all.filter((i) => i.status === "rejected");
+
+  $("#iv_total").textContent = String(all.length);
+  $("#iv_accepted").textContent = String(accepted.length);
+  $("#iv_pending").textContent = String(pending.length);
+  $("#iv_rejected").textContent = String(rejected.length);
+
+  const decided = accepted.length + rejected.length;
+  $("#iv_rate").textContent = decided > 0 ? Math.round((accepted.length / decided) * 100) + "%" : "—";
+
+  const patientIds = new Set(all.map((i) => i.patientId));
+  $("#iv_patients").textContent = String(patientIds.size);
+
+  // By CMO dimension
+  const byDim = {};
+  for (const i of all) {
+    const dim = i.cmoDimension || "Otra";
+    if (!byDim[dim]) byDim[dim] = { accepted: 0, pending: 0, rejected: 0, total: 0 };
+    byDim[dim].total++;
+    if (i.status === "accepted") byDim[dim].accepted++;
+    else if (i.status === "pending") byDim[dim].pending++;
+    else if (i.status === "rejected") byDim[dim].rejected++;
+  }
+  const dimEntries = Object.entries(byDim);
+  $("#iv_byDimension").innerHTML =
+    `<div class="kv">` +
+    dimEntries.map(([k, v]) =>
+      `<div class="k">${esc(k)}</div>` +
+      `<div class="v"><span class="chip ok">${v.accepted}</span> <span class="chip wait">${v.pending}</span> <span class="chip no">${v.rejected}</span></div>`
+    ).join("") +
+    `</div>`;
+
+  // By intervention type
+  const byType = {};
+  for (const i of all) {
+    const desc = i.description || "—";
+    if (!byType[desc]) byType[desc] = { accepted: 0, pending: 0, rejected: 0, total: 0 };
+    byType[desc].total++;
+    if (i.status === "accepted") byType[desc].accepted++;
+    else if (i.status === "pending") byType[desc].pending++;
+    else if (i.status === "rejected") byType[desc].rejected++;
+  }
+  const typeEntries = Object.entries(byType).sort((a, b) => b[1].total - a[1].total);
+  $("#iv_byType").innerHTML =
+    `<div class="kv">` +
+    typeEntries.map(([k, v]) =>
+      `<div class="k">${esc(k)}</div>` +
+      `<div class="v"><span class="chip ok">${v.accepted}</span> <span class="chip wait">${v.pending}</span> <span class="chip no">${v.rejected}</span></div>`
+    ).join("") +
+    `</div>`;
+
+  // Table
+  const filter = statusFilter || ($("#ivFilterStatus") && $("#ivFilterStatus").value) || "";
+  const filtered = filter ? all.filter((i) => i.status === filter) : all;
+
+  const tbody = $("#iv_tbody");
+  tbody.innerHTML = "";
+  for (const i of filtered) {
+    const visit = APP.state.visits.find((v) => v.visitId === i.visitId);
+    const dateStr = visit ? visit.date : "—";
+    const statusLabel = i.status === "accepted" ? "Aceptada" : i.status === "pending" ? "Pendiente" : "Rechazada";
+    const statusClass = i.status === "accepted" ? "ok" : i.status === "pending" ? "wait" : "no";
+
+    const tr = document.createElement("tr");
+    tr.innerHTML =
+      `<td>${esc(i.patientId)}</td>` +
+      `<td>${esc(dateStr)}</td>` +
+      `<td>${esc(i.cmoDimension || "—")}</td>` +
+      `<td>${esc(i.description || "—")}</td>` +
+      `<td><span class="chip ${statusClass}">${statusLabel}</span></td>`;
     tbody.appendChild(tr);
   }
 }
@@ -1516,6 +1599,7 @@ function bindNav() {
   $$(".navBtn").forEach((btn) => {
     btn.addEventListener("click", () => setView(btn.dataset.view));
   });
+  $("#ivFilterStatus").addEventListener("change", () => renderInterventions());
 }
 
 function bindPatientsUI() {
