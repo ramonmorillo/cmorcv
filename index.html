@@ -39,6 +39,7 @@
         <div class="smallMuted" style="font-weight:700;color:var(--text)">Creado por Ramon Morillo</div>
         <div class="smallMuted">Febrero 2026</div>
         <div class="smallMuted" style="margin-top:6px">Datos guardados localmente (IndexedDB). Backup periodico recomendado.</div>
+        <button class="authBtn" id="btnAuthorship" aria-haspopup="dialog">ℹ Autoría y uso</button>
       </div>
     </aside>
 
@@ -696,6 +697,108 @@
       </div>
 
     </main>
+  </div>
+
+  <!-- Mobile floating button (visible when sidebar is hidden) -->
+  <button class="authBtnMobile" id="btnAuthorshipMobile" aria-label="Autoría y uso" aria-haspopup="dialog">ℹ</button>
+
+  <!-- Modal: Autoría y uso -->
+  <div class="modal hidden" id="modalAuthorship" role="dialog" aria-modal="true" aria-labelledby="modalAuthorshipTitle">
+    <div class="modalBackdrop"></div>
+    <div class="modalCard amModal">
+      <div class="modalHeader">
+        <div class="modalTitle" id="modalAuthorshipTitle">CMO RCV — Autoría y uso</div>
+        <button class="iconBtn" id="btnCloseAuthorship" aria-label="Cerrar modal">✕</button>
+      </div>
+
+      <div class="modalBody amBody">
+        <div class="amIntro">
+          <div class="amIntroTitle">CMO RCV</div>
+          <div class="amIntroSub">Creado por Ramón Morillo &nbsp;·&nbsp; Febrero 2026 &nbsp;·&nbsp; Versión <span class="amVersionSpan"></span></div>
+        </div>
+
+        <!-- A) Autoría -->
+        <div class="amSection">
+          <div class="amSectionTitle">A) Autoría</div>
+          <p class="amText"><strong>Desarrollado por:</strong> Ramón Morillo</p>
+          <p class="amText"><strong>Asistencia técnica:</strong> Desarrollo asistido mediante herramientas de inteligencia artificial (Claude Code / Large Language Models).</p>
+        </div>
+
+        <!-- B) Base metodológica -->
+        <div class="amSection">
+          <div class="amSectionTitle">B) Base metodológica</div>
+          <p class="amText">CMO RCV se fundamenta en principios y marcos de referencia habituales en:</p>
+          <ul class="amList">
+            <li>Estratificación y evaluación del riesgo cardiovascular (enfoque clínico y de factores de riesgo).</li>
+            <li>Atención farmacéutica basada en el modelo CMO (Capacidad–Motivación–Oportunidad) aplicado a priorización y seguimiento.</li>
+            <li>Revisión estructurada de información clínica/autoinformada para apoyo a decisiones.</li>
+            <li>Conceptos metodológicos relacionados con:
+              <ul>
+                <li>Validez y coherencia interna de la información</li>
+                <li>Priorización asistencial</li>
+                <li>Enfoque centrado en la persona</li>
+                <li>Seguridad y adecuación farmacoterapéutica (cuando aplique)</li>
+              </ul>
+            </li>
+          </ul>
+        </div>
+
+        <!-- C) Declaración de independencia -->
+        <div class="amSection">
+          <div class="amSectionTitle">C) Declaración de independencia</div>
+          <p class="amText">CMO RCV es una herramienta independiente. No está afiliada, respaldada ni certificada oficialmente por:</p>
+          <ul class="amList">
+            <li>Administraciones sanitarias</li>
+            <li>Sociedades científicas</li>
+            <li>Agencias reguladoras</li>
+            <li>Instituciones sanitarias</li>
+          </ul>
+        </div>
+
+        <!-- D) Uso previsto y limitaciones -->
+        <div class="amSection">
+          <div class="amSectionTitle">D) Uso previsto y limitaciones</div>
+          <div class="amWarning">
+            CMO RCV <strong>NO</strong> sustituye el juicio clínico ni la valoración profesional.<br>
+            CMO RCV <strong>NO</strong> constituye una guía de práctica clínica ni una recomendación terapéutica directa.<br>
+            Funciona como herramienta de apoyo orientativa para estratificar/priorizar y organizar el seguimiento.
+          </div>
+          <p class="amText" style="margin-top:10px">Los resultados:</p>
+          <ul class="amList">
+            <li>Dependen de la información introducida.</li>
+            <li>Requieren interpretación profesional.</li>
+            <li>No garantizan conformidad con guías, normativas o protocolos locales.</li>
+          </ul>
+        </div>
+
+        <!-- E) Derechos y licencia -->
+        <div class="amSection">
+          <div class="amSectionTitle">E) Derechos y licencia</div>
+          <p class="amText">© 2026 Ramón Morillo. Todos los derechos reservados.</p>
+          <p class="amText">Queda prohibida la reproducción, redistribución o modificación total o parcial sin autorización expresa del autor.</p>
+        </div>
+
+        <!-- F) Cómo citar -->
+        <div class="amSection">
+          <div class="amSectionTitle">F) Cómo citar esta herramienta</div>
+          <p class="amText"><strong>APA (7.ª edición)</strong></p>
+          <div class="amMono">Morillo, R. (2026). <em>CMO RCV</em> (Versión <span class="amVersionSpan"></span>) [Software]. Disponible en: https://ramonmorillo.github.io/cmorcv/</div>
+          <p class="amText" style="margin-top:10px"><strong>Vancouver</strong></p>
+          <div class="amMono">Morillo R. CMO RCV. Version <span class="amVersionSpan"></span> [software]. 2026. Disponible en: https://ramonmorillo.github.io/cmorcv/</div>
+        </div>
+
+        <!-- G) Contacto -->
+        <div class="amSection">
+          <div class="amSectionTitle">G) Contacto</div>
+          <p class="amText">Para incidencias, sugerencias o colaboración académica:</p>
+          <p class="amText">✉ <a href="mailto:ralejandro.morillo.sspa@juntadeandalucia.es" class="amLink">ralejandro.morillo.sspa@juntadeandalucia.es</a></p>
+        </div>
+      </div>
+
+      <div class="modalFooter">
+        <button class="btn ghost" id="btnCloseAuthorshipFooter">Cerrar</button>
+      </div>
+    </div>
   </div>
 
   <script src="./app.js"></script>

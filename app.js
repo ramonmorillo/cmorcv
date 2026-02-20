@@ -13,6 +13,7 @@
 
 const APP = {
   schemaVersion: "CMO-REGISTRY-1.2",
+  VERSION: "1.0",
   dbName: "cmo_registry_db",
   dbVersion: 1,
   stores: {
@@ -2044,6 +2045,81 @@ function bindVisitDetailUI() {
   $("#btnDeleteVisit").addEventListener("click", deleteSelectedVisit);
 }
 
+// ---------------- Authorship modal ----------------
+
+function bindAuthorshipModal() {
+  const modal = document.getElementById("modalAuthorship");
+  if (!modal) return;
+
+  // Inject version wherever .amVersionSpan appears
+  modal.querySelectorAll(".amVersionSpan").forEach((el) => {
+    el.textContent = APP.VERSION;
+  });
+
+  const openBtns = [
+    document.getElementById("btnAuthorship"),
+    document.getElementById("btnAuthorshipMobile"),
+  ];
+  const closeBtns = [
+    document.getElementById("btnCloseAuthorship"),
+    document.getElementById("btnCloseAuthorshipFooter"),
+  ];
+  const backdrop = modal.querySelector(".modalBackdrop");
+
+  function openAuthModal() {
+    modal.classList.remove("hidden");
+    // Re-trigger CSS animation
+    const card = modal.querySelector(".amModal");
+    card.style.animation = "none";
+    card.offsetHeight; // reflow
+    card.style.animation = "";
+    // Move focus to close button for accessibility
+    setTimeout(() => {
+      const closeBtn = document.getElementById("btnCloseAuthorship");
+      if (closeBtn) closeBtn.focus();
+    }, 50);
+  }
+
+  function closeAuthModal() {
+    modal.classList.add("hidden");
+  }
+
+  openBtns.forEach((btn) => btn && btn.addEventListener("click", openAuthModal));
+  closeBtns.forEach((btn) => btn && btn.addEventListener("click", closeAuthModal));
+  backdrop && backdrop.addEventListener("click", closeAuthModal);
+
+  // ESC closes modal
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !modal.classList.contains("hidden")) {
+      closeAuthModal();
+    }
+  });
+
+  // Focus trap
+  modal.addEventListener("keydown", (e) => {
+    if (e.key !== "Tab") return;
+    const focusable = [
+      ...modal.querySelectorAll(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      ),
+    ];
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (e.shiftKey) {
+      if (document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      }
+    } else {
+      if (document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+  });
+}
+
 // ---------------- Init ----------------
 
 async function init() {
@@ -2060,6 +2136,7 @@ async function init() {
   bindPatientsUI();
   bindExportUI();
   bindVisitDetailUI();
+  bindAuthorshipModal();
 
   setView("patientsView");
   toast("Listo. Datos en local (IndexedDB).");
