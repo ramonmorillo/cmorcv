@@ -2597,6 +2597,7 @@ const EXPORT_CLICK_MAP = {
   btnBackupJSON:              backupJSON,
   btnQuickBackup:             backupJSON,
   btnRunDebugCheck:           runDebugSelfCheck,
+  btnClearAllCaches:          clearAllCachesAndSW,
 };
 
 // ---------- file-change dispatch table ----------
@@ -2693,10 +2694,81 @@ function bindVisitDetailUI() {
   $("#btnDeleteVisit").addEventListener("click", deleteSelectedVisit);
 }
 
+// ---------------- Service-worker management ----------------
+
+// Auto-unregister any existing service worker at startup.
+// There is no SW in this app, but a previous deploy or a browser
+// experiment may have registered one. Silently clean up so stale
+// cached assets can never block a fresh load.
+function autoUnregisterServiceWorkers() {
+  if (!("serviceWorker" in navigator)) return;
+  navigator.serviceWorker.getRegistrations()
+    .then((regs) => {
+      regs.forEach((r) => {
+        r.unregister();
+        devLog("[SW] auto-unregistered:", r.scope);
+      });
+      if (regs.length) console.info("[SW] unregistered", regs.length, "old service worker(s)");
+    })
+    .catch(() => {}); // silently ignore if blocked (e.g. cross-origin iframe)
+}
+
+// Manual "nuclear" cache clear triggered from debug panel.
+// Unregisters all SWs + deletes all Cache Storage entries.
+async function clearAllCachesAndSW() {
+  const out = document.getElementById("debugOutput");
+  const lines = [];
+  lines.push("── Limpiar Service Workers + Cache Storage ──\n");
+
+  // 1. Service workers
+  if ("serviceWorker" in navigator) {
+    try {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      if (regs.length === 0) {
+        lines.push("  ✔ No había service workers registrados");
+      } else {
+        for (const r of regs) {
+          await r.unregister();
+          lines.push("  ✔ SW deregistrado: " + r.scope);
+        }
+      }
+    } catch (e) {
+      lines.push("  ✘ Error SW: " + e.message);
+    }
+  } else {
+    lines.push("  ℹ Service Worker API no disponible en este contexto");
+  }
+
+  // 2. Cache Storage
+  if ("caches" in window) {
+    try {
+      const keys = await caches.keys();
+      if (keys.length === 0) {
+        lines.push("  ✔ No había entradas en Cache Storage");
+      } else {
+        for (const k of keys) {
+          await caches.delete(k);
+          lines.push("  ✔ Cache eliminada: " + k);
+        }
+      }
+    } catch (e) {
+      lines.push("  ✘ Error Cache Storage: " + e.message);
+    }
+  } else {
+    lines.push("  ℹ Cache Storage API no disponible en este contexto");
+  }
+
+  lines.push("\n  ✔ Cache limpiado — recarga la página (Ctrl+Shift+R) para verificar.");
+  if (out) out.textContent = lines.join("\n");
+  toast("SW y caches eliminados. Recarga la página.");
+  console.info("[SW/CACHE] limpieza completada");
+}
+
 // ---------------- Debug self-check ----------------
 
 function runDebugSelfCheck() {
-  const out = document.getElementById("debugOutput");
+  const out  = document.getElementById("debugOutput");
+  const meta = document.getElementById("debugMeta");
   if (!out) return;
 
   const lines = [];
@@ -2704,8 +2776,21 @@ function runDebugSelfCheck() {
   const err = (msg) => lines.push("  ✘ " + msg);
   const hdr = (msg) => lines.push("\n── " + msg + " ──");
 
-  hdr("Versión");
+  // ── Meta bar ──────────────────────────────────────
+  // Derive the effective <script src> that loaded app.js
+  const scriptEl = Array.from(document.scripts).find((s) => s.src.includes("app.js"));
+  const scriptSrc = scriptEl ? scriptEl.src : "(no encontrado)";
+  if (meta) {
+    meta.innerHTML =
+      "<b>BUILD_ID:</b> " + BUILD_ID +
+      " &nbsp;|&nbsp; <b>script src:</b> " + scriptSrc;
+  }
+
+  hdr("Versión y origen");
   ok("BUILD_ID = " + BUILD_ID);
+  ok("script src = " + scriptSrc);
+  if (scriptSrc.includes("?v=" + BUILD_ID)) ok("?v= coincide con BUILD_ID ✓");
+  else err("?v= NO coincide con BUILD_ID — posible caché agresiva");
   ok("JS cargado y ejecutado correctamente");
 
   hdr("Elementos del DOM (botones exportar)");
@@ -2789,7 +2874,42 @@ function runDebugSelfCheck() {
   ok("Visitas en memoria: " + APP.state.visits.length);
   ok("Intervenciones en memoria: " + APP.state.interventions.length);
 
+  hdr("Service Workers registrados");
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.getRegistrations().then((regs) => {
+      const swLines = regs.length === 0
+        ? ["  ✔ Ningún SW registrado (correcto)"]
+        : regs.map((r) => "  ⚠ SW activo: " + r.scope);
+      out.textContent += "\n── Service Workers registrados ──\n" + swLines.join("\n");
+    }).catch((e) => {
+      out.textContent += "\n  ✘ getRegistrations error: " + e.message;
+    });
+    ok("(comprobando en segundo plano…)");
+  } else {
+    ok("API serviceWorker no disponible");
+  }
+
+  // Synchronous output (SW check appends asynchronously above)
   out.textContent = lines.join("\n");
+
+  // Async: fetch a few bytes of app.js with cache:no-store to confirm
+  // the server is serving the new version (not a CDN-cached old one)
+  hdr("Fetch probe app.js (no-store)");
+  const fetchUrl = "./app.js?v=" + BUILD_ID + "&_probe=" + Date.now();
+  fetch(fetchUrl, { cache: "no-store" })
+    .then((r) => {
+      if (!r.ok) { out.textContent += "\n  ✘ fetch HTTP " + r.status; return; }
+      return r.text().then((t) => {
+        const snippet = t.slice(0, 80).replace(/\n/g, "↵");
+        out.textContent +=
+          "\n\n── Fetch probe app.js (no-store) ──" +
+          "\n  ✔ HTTP " + r.status + " — primeros 80 chars:" +
+          "\n  " + snippet + "…";
+      });
+    })
+    .catch((e) => {
+      out.textContent += "\n\n── Fetch probe ──\n  ✘ fetch failed: " + e.message;
+    });
 }
 
 function initDebugPanel() {
@@ -2804,6 +2924,8 @@ function initDebugPanel() {
 // ---------------- Init ----------------
 
 async function init() {
+  autoUnregisterServiceWorkers(); // fire-and-forget; cleans up any stale SW
+
   APP.state.db = await openDB();
   await loadAll();
 

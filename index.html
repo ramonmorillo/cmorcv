@@ -545,9 +545,13 @@
         <div class="panel debugPanel hidden" id="debugPanel" style="margin-top:14px;border:2px solid var(--accent);background:rgba(var(--accentRGB,30,136,229),.05)">
           <div class="panelHeader">
             <div class="panelTitle" style="color:var(--accent)">🔬 Diagnóstico (modo debug)</div>
-            <button class="btn ghost" id="btnRunDebugCheck" style="font-size:12px">Ejecutar self-check</button>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button class="btn ghost" id="btnRunDebugCheck" style="font-size:12px">▶ Ejecutar self-check</button>
+              <button class="btn ghost" id="btnClearAllCaches" style="font-size:12px;color:var(--danger,#dc3545)">🗑 Limpiar SW + Cache</button>
+            </div>
           </div>
-          <div id="debugOutput" style="font-size:12px;font-family:monospace;padding:10px 0;white-space:pre-wrap;line-height:1.6"></div>
+          <div id="debugMeta" style="font-size:11px;font-family:monospace;padding:6px 0 0;opacity:.8"></div>
+          <div id="debugOutput" style="font-size:12px;font-family:monospace;padding:6px 0 10px;white-space:pre-wrap;line-height:1.6"></div>
         </div>
       </section>
 
