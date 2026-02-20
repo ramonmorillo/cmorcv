@@ -13,7 +13,6 @@
 
 const APP = {
   schemaVersion: "CMO-REGISTRY-1.2",
-  VERSION: "1.0",
   dbName: "cmo_registry_db",
   dbVersion: 1,
   stores: {
@@ -383,7 +382,6 @@ function downloadText(filename, text, mime = "text/plain;charset=utf-8") {
 
 function csvEscape(value) {
   const s = value === null || value === undefined ? "" : String(value);
-  // RFC4180: escape if contains comma, quote, or newlines
   if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
   return s;
 }
@@ -2025,82 +2023,75 @@ async function deleteSelectedPatient() {
 
 // ---------------- Export / Backup ----------------
 
-// --- Serializers (stored object → CSV-flat row) ---
-
 function patientsForCSV() {
   return APP.state.patients.map((p) => ({
-    patientId:           p.patientId           ?? "",
-    prevalentCondition:  p.prevalentCondition  ?? "",
-    sex:                 p.sex                 ?? "",
-    birthYear:           p.birthYear           ?? "",
-    comorbidities:       p.comorbidities       ?? "",
-    notes:               p.notes               ?? "",
-    status:              p.status              ?? "",
-    createdAt:           p.createdAt           ?? "",
-    schemaVersion:       p.schemaVersion       ?? "",
+    patientId: p.patientId,
+    prevalentCondition: p.prevalentCondition ?? "",
+    sex: p.sex ?? "",
+    birthYear: p.birthYear ?? "",
+    comorbidities: p.comorbidities ?? "",
+    notes: p.notes ?? "",
+    status: p.status ?? "",
+    createdAt: p.createdAt ?? "",
+    schemaVersion: p.schemaVersion ?? "",
   }));
 }
 
 function visitsForCSV() {
   return APP.state.visits.map((v) => ({
-    visitId:                v.visitId                ?? "",
-    patientId:              v.patientId              ?? "",
-    date:                   v.date                   ?? "",
-    hospitalDrug:           v.hospitalDrug           ?? "",
-    ldl:                    v.ldl                    ?? "",
-    ldlTarget:              v.ldlTarget              ?? "",
-    ldlGoalAchieved:        v.ldlGoalAchieved === true ? "true" : v.ldlGoalAchieved === false ? "false" : "",
-    treatment:              v.treatment              ?? "",
-    adherence:              v.adherence              ?? "",
-    ram:                    v.ram                    ?? "",
-    cmoScore:               v.cmoScore               ?? "",
-    priorityLevel:          v.priorityLevel          ?? "",
-    priorityJustification:  v.priorityJustification  ?? "",
-    oftObjectives:          v.oftObjectives          ?? "",
-    followUpPlan:           v.followUpPlan           ?? "",
-    stratVars_json:         v.stratVars ? JSON.stringify(v.stratVars) : "",
-    createdAt:              v.createdAt              ?? "",
-    schemaVersion:          v.schemaVersion          ?? "",
+    visitId: v.visitId,
+    patientId: v.patientId,
+    date: v.date ?? "",
+    hospitalDrug: v.hospitalDrug ?? "",
+    ldl: v.ldl ?? "",
+    ldlTarget: v.ldlTarget ?? "",
+    ldlGoalAchieved: v.ldlGoalAchieved === true ? "true" : v.ldlGoalAchieved === false ? "false" : "",
+    treatment: v.treatment ?? "",
+    adherence: v.adherence ?? "",
+    ram: v.ram ?? "",
+    cmoScore: v.cmoScore ?? "",
+    priorityLevel: v.priorityLevel ?? "",
+    priorityJustification: v.priorityJustification ?? "",
+    oftObjectives: v.oftObjectives ?? "",
+    followUpPlan: v.followUpPlan ?? "",
+    stratVars_json: v.stratVars ? JSON.stringify(v.stratVars) : "",
+    createdAt: v.createdAt ?? "",
+    schemaVersion: v.schemaVersion ?? "",
   }));
 }
 
 function interventionsForCSV() {
   return APP.state.interventions.map((i) => ({
-    interventionId: i.interventionId ?? "",
-    patientId:      i.patientId      ?? "",
-    visitId:        i.visitId        ?? "",
-    type:           i.type           ?? "",
-    cmoDimension:   i.cmoDimension   ?? "",
-    description:    i.description    ?? "",
-    status:         i.status         ?? "",
-    outcomeNotes:   i.outcomeNotes   ?? "",
-    createdAt:      i.createdAt      ?? "",
-    schemaVersion:  i.schemaVersion  ?? "",
+    interventionId: i.interventionId,
+    patientId: i.patientId,
+    visitId: i.visitId,
+    type: i.type ?? "",
+    cmoDimension: i.cmoDimension ?? "",
+    description: i.description ?? "",
+    status: i.status ?? "",
+    outcomeNotes: i.outcomeNotes ?? "",
+    createdAt: i.createdAt ?? "",
+    schemaVersion: i.schemaVersion ?? "",
   }));
 }
 
-// --- CSV Export (Excel Spain: sep=;, BOM, CRLF) ---
-
 async function exportPatientsCSV() {
   const rows = patientsForCSV();
-  if (!rows.length) return toast("No hay pacientes para exportar.");
-  const headers = CSV_SCHEMA.patients.map((f) => f.key);
+  const headers = Object.keys(rows[0] || {});
   downloadText("patients.csv", toCSV(rows, headers), "text/csv;charset=utf-8");
-  toast(`patients.csv exportado (${rows.length} filas).`);
+  toast("patients.csv exportado.");
 }
 
 async function exportVisitsCSV() {
   const rows = visitsForCSV();
-  if (!rows.length) return toast("No hay visitas para exportar.");
-  const headers = CSV_SCHEMA.visits.map((f) => f.key);
+  const headers = Object.keys(rows[0] || {});
   downloadText("visits.csv", toCSV(rows, headers), "text/csv;charset=utf-8");
-  toast(`visits.csv exportado (${rows.length} filas).`);
+  toast("visits.csv exportado.");
 }
 
 async function exportInterventionsCSV() {
   const rows = interventionsForCSV();
-  if (!rows.length) return toast("No hay intervenciones para exportar.");
-  const headers = CSV_SCHEMA.interventions.map((f) => f.key);
+  const headers = Object.keys(rows[0] || {});
   downloadText("interventions.csv", toCSV(rows, headers), "text/csv;charset=utf-8");
   toast(`interventions.csv exportado (${rows.length} filas).`);
 }
@@ -2417,23 +2408,15 @@ async function exportInterventionsCSVExcelES() {
   toast(`interventions_excelES.csv exportado (${rows.length} filas).`);
 }
 
-// --- Backup JSON (full state) ---
-
 async function backupJSON() {
   const payload = {
-    appName:       "CMO RCV",
-    version:       APP.VERSION,
     schemaVersion: APP.schemaVersion,
-    exportedAt:    new Date().toISOString(),
-    patients:      APP.state.patients,
-    visits:        APP.state.visits,
+    exportedAt: new Date().toISOString(),
+    patients: APP.state.patients,
+    visits: APP.state.visits,
     interventions: APP.state.interventions,
   };
-  downloadText(
-    `backup_${new Date().toISOString().slice(0, 10)}.json`,
-    JSON.stringify(payload, null, 2),
-    "application/json;charset=utf-8"
-  );
+  downloadText(`backup_${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(payload, null, 2), "application/json;charset=utf-8");
   const when = new Date().toISOString();
   await dbSetMeta("lastBackupAt", when);
   updateStats();
@@ -2446,33 +2429,23 @@ async function importJSON(file) {
     const payload = JSON.parse(text);
 
     if (!payload || !payload.patients || !payload.visits || !payload.interventions) {
-      return alert("Backup inválido: faltan secciones (patients, visits, interventions).");
-    }
-    if (payload.appName && payload.appName !== "CMO RCV") {
-      return alert(`Este backup pertenece a "${payload.appName}", no a CMO RCV.`);
-    }
-    if (payload.version && payload.version !== APP.VERSION) {
-      const ok = confirm(`El backup es de la versión ${payload.version} (versión actual: ${APP.VERSION}).\nSe intentará importar de todas formas. ¿Continuar?`);
-      if (!ok) return;
+      return toast("Backup inválido (faltan secciones).");
     }
 
-    const total = payload.patients.length + payload.visits.length + payload.interventions.length;
-    if (!confirm(
-      `Se importarán:\n• ${payload.patients.length} paciente(s)\n• ${payload.visits.length} visita(s)\n• ${payload.interventions.length} intervención/es\n\nLos registros existentes (mismo ID) serán sobrescritos.\n¿Continuar?`
-    )) return;
+    if (!confirm("Esto mezclará (o sobrescribirá por ID) los datos actuales. ¿Continuar?")) return;
 
-    for (const p of payload.patients)      await dbPut(APP.stores.patients, p);
-    for (const v of payload.visits)        await dbPut(APP.stores.visits, v);
+    for (const p of payload.patients) await dbPut(APP.stores.patients, p);
+    for (const v of payload.visits) await dbPut(APP.stores.visits, v);
     for (const i of payload.interventions) await dbPut(APP.stores.interventions, i);
 
+    toast("Importado. Recargando datos…");
     await loadAll();
     fillConditionSelectors();
     updateStats();
     renderPatientsTable();
-    toast(`✔ Backup importado: ${total} registros.`);
   } catch (e) {
     console.error(e);
-    alert("Error importando el backup JSON. Verifica que el archivo es válido.");
+    toast("Error importando JSON.");
   }
 }
 
@@ -2592,81 +2565,6 @@ function bindVisitDetailUI() {
   $("#btnDeleteVisit").addEventListener("click", deleteSelectedVisit);
 }
 
-// ---------------- Authorship modal ----------------
-
-function bindAuthorshipModal() {
-  const modal = document.getElementById("modalAuthorship");
-  if (!modal) return;
-
-  // Inject version wherever .amVersionSpan appears
-  modal.querySelectorAll(".amVersionSpan").forEach((el) => {
-    el.textContent = APP.VERSION;
-  });
-
-  const openBtns = [
-    document.getElementById("btnAuthorship"),
-    document.getElementById("btnAuthorshipMobile"),
-  ];
-  const closeBtns = [
-    document.getElementById("btnCloseAuthorship"),
-    document.getElementById("btnCloseAuthorshipFooter"),
-  ];
-  const backdrop = modal.querySelector(".modalBackdrop");
-
-  function openAuthModal() {
-    modal.classList.remove("hidden");
-    // Re-trigger CSS animation
-    const card = modal.querySelector(".amModal");
-    card.style.animation = "none";
-    card.offsetHeight; // reflow
-    card.style.animation = "";
-    // Move focus to close button for accessibility
-    setTimeout(() => {
-      const closeBtn = document.getElementById("btnCloseAuthorship");
-      if (closeBtn) closeBtn.focus();
-    }, 50);
-  }
-
-  function closeAuthModal() {
-    modal.classList.add("hidden");
-  }
-
-  openBtns.forEach((btn) => btn && btn.addEventListener("click", openAuthModal));
-  closeBtns.forEach((btn) => btn && btn.addEventListener("click", closeAuthModal));
-  backdrop && backdrop.addEventListener("click", closeAuthModal);
-
-  // ESC closes modal
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && !modal.classList.contains("hidden")) {
-      closeAuthModal();
-    }
-  });
-
-  // Focus trap
-  modal.addEventListener("keydown", (e) => {
-    if (e.key !== "Tab") return;
-    const focusable = [
-      ...modal.querySelectorAll(
-        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
-      ),
-    ];
-    if (!focusable.length) return;
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (e.shiftKey) {
-      if (document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
-      }
-    } else {
-      if (document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    }
-  });
-}
-
 // ---------------- Init ----------------
 
 async function init() {
@@ -2683,7 +2581,6 @@ async function init() {
   bindPatientsUI();
   bindExportUI();
   bindVisitDetailUI();
-  bindAuthorshipModal();
 
   setView("patientsView");
   toast("Listo. Datos en local (IndexedDB).");
