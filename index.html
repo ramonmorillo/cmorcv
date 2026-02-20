@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Herramienta seguimiento CMO para RCV</title>
-  <link rel="stylesheet" href="./styles.css" />
+  <link rel="stylesheet" href="./styles.css?v=20260220_1900" />
 </head>
 <body>
   <div class="app">
@@ -449,6 +449,7 @@
                 </div>
               </div>
             </div>
+          </div><!-- /exBlock exportar -->
 
           <div class=”divider”></div>
 
@@ -537,6 +538,15 @@
             </div>
           </div>
 
+        </div>
+
+        <!-- ── Debug / self-check panel — visible only when ?debug=1 ── -->
+        <div class="panel debugPanel hidden" id="debugPanel" style="margin-top:14px;border:2px solid var(--accent);background:rgba(var(--accentRGB,30,136,229),.05)">
+          <div class="panelHeader">
+            <div class="panelTitle" style="color:var(--accent)">🔬 Diagnóstico (modo debug)</div>
+            <button class="btn ghost" id="btnRunDebugCheck" style="font-size:12px">Ejecutar self-check</button>
+          </div>
+          <div id="debugOutput" style="font-size:12px;font-family:monospace;padding:10px 0;white-space:pre-wrap;line-height:1.6"></div>
         </div>
       </section>
 
@@ -785,6 +795,6 @@
     </main>
   </div>
 
-  <script src="./app.js"></script>
+  <script src="./app.js?v=20260220_1900"></script>
 </body>
 </html>

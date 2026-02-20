@@ -11,6 +11,13 @@
    - Modern UI + LDL chart (canvas) no external libs
 */
 
+const APP_VERSION = "20260220_1900";
+const IS_DEV = typeof window !== "undefined" &&
+  (location.hostname === "localhost" || location.hostname === "127.0.0.1" ||
+   new URLSearchParams(location.search).has("debug"));
+
+function devLog(...args) { if (IS_DEV) console.log("[CMO]", ...args); }
+
 const APP = {
   schemaVersion: "CMO-REGISTRY-1.2",
   dbName: "cmo_registry_db",
@@ -368,41 +375,85 @@ function safeNum(x) {
   return Number.isFinite(n) ? n : null;
 }
 
-function downloadText(filename, text, mime = "text/plain;charset=utf-8") {
-  const blob = new Blob([text], { type: mime });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+// ── File-read helper (Safari < 14 compat) ────────────────────────────────────
+// file.text() is only available from Safari 14+. For older Safari we fall
+// back to FileReader which is universally supported.
+function readFileAsText(file) {
+  if (typeof file.text === "function") return file.text();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload  = (e) => resolve(e.target.result);
+    reader.onerror = ()  => reject(new Error("FileReader error"));
+    reader.readAsText(file, "utf-8");
+  });
 }
 
-function csvEscape(value) {
+// ── Download helper ──────────────────────────────────────────────────────────
+// Safari fix: do NOT revoke the blob URL synchronously after click(); Safari
+// hasn't started the download yet at that point and the URL becomes invalid.
+// A 150 ms delay is sufficient in all tested browsers.
+function downloadText(filename, text, mime = "text/plain;charset=utf-8") {
+  if (!filename) { console.error("[EXPORT] downloadText: filename is empty"); return; }
+  try {
+    const blob = new Blob([text], { type: mime });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href     = url;
+    a.download = filename;
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    // Clean up after a delay so Safari can complete the download handshake
+    setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 250);
+    devLog("[EXPORT] downloadText OK →", filename);
+  } catch (err) {
+    console.error("[EXPORT] downloadText failed:", err);
+    toast("Error al generar el archivo. Comprueba la consola.");
+  }
+}
+
+// ── Unified CSV builder ───────────────────────────────────────────────────────
+// exportCSV({ rows, filename, sep=',', bom=false })
+// sep: ',' for standard, ';' for Excel ES
+// bom: true adds UTF-8 BOM (required for Excel ES on Windows)
+function csvEscapeField(value, sep) {
   const s = value === null || value === undefined ? "" : String(value);
-  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  // Quote if field contains sep, double-quote, CR or LF
+  const needsQuote = s.includes(sep) || s.includes('"') || s.includes("\n") || s.includes("\r");
+  if (needsQuote) return `"${s.replace(/"/g, '""')}"`;
   return s;
 }
 
-// Default export: comma separator, no BOM (compatible with all tools)
-function toCSV(rows, headers) {
-  const lines = [headers.map(csvEscape).join(",")];
-  for (const r of rows) lines.push(headers.map((h) => csvEscape(r[h] ?? "")).join(","));
+function buildCSVText(rows, headers, sep) {
+  const esc  = (v) => csvEscapeField(v, sep);
+  const lines = [headers.map(esc).join(sep)];
+  for (const r of rows) lines.push(headers.map((h) => esc(r[h] ?? "")).join(sep));
   return lines.join("\r\n");
 }
 
-// Excel España export: semicolon separator, UTF-8 BOM
-function csvEscapeSemi(value) {
-  const s = value === null || value === undefined ? "" : String(value);
-  if (/[;",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-  return s;
+function exportCSV({ rows, filename, sep = ",", bom = false }) {
+  if (!rows || !rows.length) {
+    console.warn("[EXPORT] exportCSV: no rows to export →", filename);
+    toast("No hay datos para exportar.");
+    return;
+  }
+  if (!filename) { console.error("[EXPORT] exportCSV: filename is empty"); return; }
+  const headers = Object.keys(rows[0]);
+  const text    = (bom ? "\uFEFF" : "") + buildCSVText(rows, headers, sep);
+  const mime    = "text/csv;charset=utf-8";
+  devLog("[EXPORT] exportCSV →", filename, "rows:", rows.length, "sep:", JSON.stringify(sep), "bom:", bom);
+  downloadText(filename, text, mime);
+}
+
+// Keep legacy helpers used internally by schema-based exports
+function csvEscape(value) {
+  return csvEscapeField(value, ",");
+}
+function toCSV(rows, headers) {
+  return buildCSVText(rows, headers, ",");
 }
 function toCSVExcelES(rows, headers) {
-  const lines = [headers.map(csvEscapeSemi).join(";")];
-  for (const r of rows) lines.push(headers.map((h) => csvEscapeSemi(r[h] ?? "")).join(";"));
-  return "\uFEFF" + lines.join("\r\n"); // UTF-8 BOM + CRLF
+  return "\uFEFF" + buildCSVText(rows, headers, ";");
 }
 
 // Normalize various date formats → YYYY-MM-DD. Returns null if unparseable.
@@ -2077,22 +2128,22 @@ function interventionsForCSV() {
 
 async function exportPatientsCSV() {
   const rows = patientsForCSV();
-  const headers = Object.keys(rows[0] || {});
-  downloadText("patients.csv", toCSV(rows, headers), "text/csv;charset=utf-8");
-  toast("patients.csv exportado.");
+  if (!rows.length) return toast("No hay pacientes para exportar.");
+  exportCSV({ rows, filename: "patients.csv", sep: ",", bom: false });
+  toast(`patients.csv exportado (${rows.length} filas).`);
 }
 
 async function exportVisitsCSV() {
   const rows = visitsForCSV();
-  const headers = Object.keys(rows[0] || {});
-  downloadText("visits.csv", toCSV(rows, headers), "text/csv;charset=utf-8");
-  toast("visits.csv exportado.");
+  if (!rows.length) return toast("No hay visitas para exportar.");
+  exportCSV({ rows, filename: "visits.csv", sep: ",", bom: false });
+  toast(`visits.csv exportado (${rows.length} filas).`);
 }
 
 async function exportInterventionsCSV() {
   const rows = interventionsForCSV();
-  const headers = Object.keys(rows[0] || {});
-  downloadText("interventions.csv", toCSV(rows, headers), "text/csv;charset=utf-8");
+  if (!rows.length) return toast("No hay intervenciones para exportar.");
+  exportCSV({ rows, filename: "interventions.csv", sep: ",", bom: false });
   toast(`interventions.csv exportado (${rows.length} filas).`);
 }
 
@@ -2264,7 +2315,13 @@ function _parseCsvAndPreview(entity, rawText, schema, buildRow, knownPatientIds,
 // --- Prepare functions (parse → validate → store pending → show preview) ---
 
 async function prepareImportPatientsCSV(file) {
-  let rawText; try { rawText = await file.text(); } catch { return toast("Error leyendo archivo."); }
+  devLog("[IMPORT] prepareImportPatientsCSV →", file.name, file.size, "bytes");
+  let rawText;
+  try { rawText = await readFileAsText(file); }
+  catch (err) {
+    console.error("[IMPORT] Error leyendo archivo patients:", err);
+    return toast("Error leyendo archivo. Comprueba la consola.");
+  }
   const buildRow = (rec) => ({
     patientId:          rec.patientId,
     prevalentCondition: rec.prevalentCondition || "",
@@ -2281,7 +2338,13 @@ async function prepareImportPatientsCSV(file) {
 }
 
 async function prepareImportVisitsCSV(file) {
-  let rawText; try { rawText = await file.text(); } catch { return toast("Error leyendo archivo."); }
+  devLog("[IMPORT] prepareImportVisitsCSV →", file.name, file.size, "bytes");
+  let rawText;
+  try { rawText = await readFileAsText(file); }
+  catch (err) {
+    console.error("[IMPORT] Error leyendo archivo visits:", err);
+    return toast("Error leyendo archivo. Comprueba la consola.");
+  }
   // Known patient IDs: existing DB + any pending patients batch
   const knownPatIds = new Set([
     ...APP.state.patients.map((p) => p.patientId),
@@ -2317,7 +2380,13 @@ async function prepareImportVisitsCSV(file) {
 }
 
 async function prepareImportInterventionsCSV(file) {
-  let rawText; try { rawText = await file.text(); } catch { return toast("Error leyendo archivo."); }
+  devLog("[IMPORT] prepareImportInterventionsCSV →", file.name, file.size, "bytes");
+  let rawText;
+  try { rawText = await readFileAsText(file); }
+  catch (err) {
+    console.error("[IMPORT] Error leyendo archivo interventions:", err);
+    return toast("Error leyendo archivo. Comprueba la consola.");
+  }
   const knownPatIds = new Set([
     ...APP.state.patients.map((p) => p.patientId),
     ...(APP.state.csvPending.patients || []).map((p) => p.patientId),
@@ -2387,24 +2456,21 @@ async function applyImportInterventionsCSV() {
 async function exportPatientsCSVExcelES() {
   const rows = patientsForCSV();
   if (!rows.length) return toast("No hay pacientes para exportar.");
-  const headers = CSV_SCHEMA.patients.map((f) => f.key);
-  downloadText("patients_excelES.csv", toCSVExcelES(rows, headers), "text/csv;charset=utf-8");
+  exportCSV({ rows, filename: "patients_excelES.csv", sep: ";", bom: true });
   toast(`patients_excelES.csv exportado (${rows.length} filas).`);
 }
 
 async function exportVisitsCSVExcelES() {
   const rows = visitsForCSV();
   if (!rows.length) return toast("No hay visitas para exportar.");
-  const headers = CSV_SCHEMA.visits.map((f) => f.key);
-  downloadText("visits_excelES.csv", toCSVExcelES(rows, headers), "text/csv;charset=utf-8");
+  exportCSV({ rows, filename: "visits_excelES.csv", sep: ";", bom: true });
   toast(`visits_excelES.csv exportado (${rows.length} filas).`);
 }
 
 async function exportInterventionsCSVExcelES() {
   const rows = interventionsForCSV();
   if (!rows.length) return toast("No hay intervenciones para exportar.");
-  const headers = CSV_SCHEMA.interventions.map((f) => f.key);
-  downloadText("interventions_excelES.csv", toCSVExcelES(rows, headers), "text/csv;charset=utf-8");
+  exportCSV({ rows, filename: "interventions_excelES.csv", sep: ";", bom: true });
   toast(`interventions_excelES.csv exportado (${rows.length} filas).`);
 }
 
@@ -2424,8 +2490,9 @@ async function backupJSON() {
 }
 
 async function importJSON(file) {
+  devLog("[IMPORT] importJSON →", file.name, file.size, "bytes");
   try {
-    const text = await file.text();
+    const text = await readFileAsText(file);
     const payload = JSON.parse(text);
 
     if (!payload || !payload.patients || !payload.visits || !payload.interventions) {
@@ -2498,71 +2565,228 @@ function bindPatientsUI() {
   });
 }
 
+// ---------- click dispatch table ----------
+const EXPORT_CLICK_MAP = {
+  btnExportPatientsCSV:       exportPatientsCSV,
+  btnExportVisitsCSV:         exportVisitsCSV,
+  btnExportInterventionsCSV:  exportInterventionsCSV,
+  btnExportPatientsCSVES:     exportPatientsCSVExcelES,
+  btnExportVisitsCSVES:       exportVisitsCSVExcelES,
+  btnExportInterventionsCSVES:exportInterventionsCSVExcelES,
+  btnTemplatePatients:        downloadPatientsTemplate,
+  btnTemplateVisits:          downloadVisitsTemplate,
+  btnTemplateInterventions:   downloadInterventionsTemplate,
+  btnApply_patients:          applyImportPatientsCSV,
+  btnApply_visits:            applyImportVisitsCSV,
+  btnApply_interventions:     applyImportInterventionsCSV,
+  btnCancel_patients:         () => hideImportPreview("patients"),
+  btnCancel_visits:           () => hideImportPreview("visits"),
+  btnCancel_interventions:    () => hideImportPreview("interventions"),
+  btnBackupJSON:              backupJSON,
+  btnQuickBackup:             backupJSON,
+  btnRunDebugCheck:           runDebugSelfCheck,
+};
+
+// ---------- file-change dispatch table ----------
+const IMPORT_CHANGE_MAP = {
+  fileImportPatientsCSV:      prepareImportPatientsCSV,
+  fileImportVisitsCSV:        prepareImportVisitsCSV,
+  fileImportInterventionsCSV: prepareImportInterventionsCSV,
+};
+
 function bindExportUI() {
+  // ── Primary: delegated listeners on document ──
+  // These fire regardless of DOM mutation timing or partial querySelector failures.
+  document.addEventListener("click", (e) => {
+    const id = e.target?.id || e.target?.closest("[id]")?.id;
+    const handler = EXPORT_CLICK_MAP[id];
+    if (handler) {
+      devLog("[EXPORT/IMPORT] click →", id);
+      handler();
+    }
+  });
+
+  document.addEventListener("change", (e) => {
+    const id = e.target?.id;
+    const fn = IMPORT_CHANGE_MAP[id];
+    if (fn) {
+      const f = e.target.files?.[0];
+      if (!f) return;
+      devLog("[IMPORT] file selected →", id, f.name);
+      fn(f);
+    }
+    // JSON backup restore
+    if (id === "fileImportJSON") {
+      const f = e.target.files?.[0];
+      if (!f) return;
+      devLog("[IMPORT] JSON restore →", f.name);
+      importJSON(f);
+      e.target.value = "";
+    }
+  });
+
+  // ── Fallback: also bind directly (belt + suspenders) ──
   function bind(sel, handler) {
     const el = document.querySelector(sel);
-    if (el) el.addEventListener("click", handler);
+    if (el) {
+      el.addEventListener("click", handler);
+      devLog("[EXPORT/IMPORT] direct bind OK →", sel);
+    } else {
+      devLog("[EXPORT/IMPORT] WARN: element not found →", sel);
+    }
   }
   function bindChange(sel, handler) {
     const el = document.querySelector(sel);
     if (el) el.addEventListener("change", handler);
   }
 
-  // --- CSV export (standard comma) ---
-  bind("#btnExportPatientsCSV",      exportPatientsCSV);
-  bind("#btnExportVisitsCSV",        exportVisitsCSV);
-  bind("#btnExportInterventionsCSV", exportInterventionsCSV);
+  bind("#btnExportPatientsCSV",       exportPatientsCSV);
+  bind("#btnExportVisitsCSV",         exportVisitsCSV);
+  bind("#btnExportInterventionsCSV",  exportInterventionsCSV);
+  bind("#btnExportPatientsCSVES",     exportPatientsCSVExcelES);
+  bind("#btnExportVisitsCSVES",       exportVisitsCSVExcelES);
+  bind("#btnExportInterventionsCSVES",exportInterventionsCSVExcelES);
+  bind("#btnTemplatePatients",        downloadPatientsTemplate);
+  bind("#btnTemplateVisits",          downloadVisitsTemplate);
+  bind("#btnTemplateInterventions",   downloadInterventionsTemplate);
+  bind("#btnApply_patients",          applyImportPatientsCSV);
+  bind("#btnApply_visits",            applyImportVisitsCSV);
+  bind("#btnApply_interventions",     applyImportInterventionsCSV);
+  bind("#btnCancel_patients",         () => hideImportPreview("patients"));
+  bind("#btnCancel_visits",           () => hideImportPreview("visits"));
+  bind("#btnCancel_interventions",    () => hideImportPreview("interventions"));
+  bind("#btnBackupJSON",              backupJSON);
+  bind("#btnQuickBackup",             backupJSON);
 
-  // --- CSV export (Excel ES: semicolon + BOM) ---
-  bind("#btnExportPatientsCSVES",      exportPatientsCSVExcelES);
-  bind("#btnExportVisitsCSVES",        exportVisitsCSVExcelES);
-  bind("#btnExportInterventionsCSVES", exportInterventionsCSVExcelES);
-
-  // --- CSV templates ---
-  bind("#btnTemplatePatients",      downloadPatientsTemplate);
-  bind("#btnTemplateVisits",        downloadVisitsTemplate);
-  bind("#btnTemplateInterventions", downloadInterventionsTemplate);
-
-  // --- CSV import: phase 1 (parse + preview) ---
-  const csvPrepareMap = [
-    { sel: "#fileImportPatientsCSV",      fn: prepareImportPatientsCSV },
-    { sel: "#fileImportVisitsCSV",        fn: prepareImportVisitsCSV },
-    { sel: "#fileImportInterventionsCSV", fn: prepareImportInterventionsCSV },
-  ];
-  for (const { sel, fn } of csvPrepareMap) {
-    const el = document.querySelector(sel);
-    if (!el) continue;
-    el.addEventListener("change", (ev) => {
-      const f = ev.target.files?.[0];
-      if (!f) return;
-      fn(f);
-      // keep ev.target.value so the same file can be re-selected after cancel
-    });
-  }
-
-  // --- CSV import: phase 2 (apply) ---
-  bind("#btnApply_patients",      applyImportPatientsCSV);
-  bind("#btnApply_visits",        applyImportVisitsCSV);
-  bind("#btnApply_interventions", applyImportInterventionsCSV);
-
-  // --- CSV import: cancel (hide preview) ---
-  bind("#btnCancel_patients",      () => hideImportPreview("patients"));
-  bind("#btnCancel_visits",        () => hideImportPreview("visits"));
-  bind("#btnCancel_interventions", () => hideImportPreview("interventions"));
-
-  // --- JSON backup / restore ---
-  bind("#btnBackupJSON",  backupJSON);
-  bind("#btnQuickBackup", backupJSON);
+  bindChange("#fileImportPatientsCSV", (ev) => {
+    const f = ev.target.files?.[0]; if (f) prepareImportPatientsCSV(f);
+  });
+  bindChange("#fileImportVisitsCSV", (ev) => {
+    const f = ev.target.files?.[0]; if (f) prepareImportVisitsCSV(f);
+  });
+  bindChange("#fileImportInterventionsCSV", (ev) => {
+    const f = ev.target.files?.[0]; if (f) prepareImportInterventionsCSV(f);
+  });
   bindChange("#fileImportJSON", (ev) => {
     const f = ev.target.files?.[0];
     if (!f) return;
     importJSON(f);
     ev.target.value = "";
   });
+
+  devLog("[EXPORT/IMPORT] bindExportUI() complete — version", APP_VERSION);
 }
 
 function bindVisitDetailUI() {
   $("#btnDeleteVisit").addEventListener("click", deleteSelectedVisit);
+}
+
+// ---------------- Debug self-check ----------------
+
+function runDebugSelfCheck() {
+  const out = document.getElementById("debugOutput");
+  if (!out) return;
+
+  const lines = [];
+  const ok  = (msg) => lines.push("  ✔ " + msg);
+  const err = (msg) => lines.push("  ✘ " + msg);
+  const hdr = (msg) => lines.push("\n── " + msg + " ──");
+
+  hdr("Versión");
+  ok("APP_VERSION = " + APP_VERSION);
+  ok("JS cargado y ejecutado correctamente");
+
+  hdr("Elementos del DOM (botones exportar)");
+  const exportBtns = [
+    "btnExportPatientsCSV","btnExportVisitsCSV","btnExportInterventionsCSV",
+    "btnExportPatientsCSVES","btnExportVisitsCSVES","btnExportInterventionsCSVES",
+    "btnTemplatePatients","btnTemplateVisits","btnTemplateInterventions",
+  ];
+  exportBtns.forEach((id) => {
+    if (document.getElementById(id)) ok(id + " encontrado");
+    else err(id + " NO encontrado en DOM");
+  });
+
+  hdr("Elementos del DOM (importar)");
+  const importEls = [
+    "fileImportPatientsCSV","fileImportVisitsCSV","fileImportInterventionsCSV",
+    "btnApply_patients","btnApply_visits","btnApply_interventions",
+  ];
+  importEls.forEach((id) => {
+    if (document.getElementById(id)) ok(id + " encontrado");
+    else err(id + " NO encontrado en DOM");
+  });
+
+  hdr("Listeners delegados (document)");
+  ok("click  delegado activo (dispatch table: " + Object.keys(EXPORT_CLICK_MAP).length + " entradas)");
+  ok("change delegado activo (dispatch table: " + Object.keys(IMPORT_CHANGE_MAP).length + " entradas)");
+
+  hdr("Test rápido: construcción CSV");
+  try {
+    const dummyRows = [{ id: "T-001", nombre: 'Con "comillas"', sep: "a;b", val: 42 }];
+    const csv = buildCSVText(dummyRows, Object.keys(dummyRows[0]), ",");
+    const lines2 = csv.split("\r\n");
+    if (lines2.length === 2 && lines2[0] === "id,nombre,sep,val") {
+      ok("toCSV estándar → cabecera OK");
+    } else {
+      err("toCSV estándar → resultado inesperado: " + JSON.stringify(csv));
+    }
+    const csvES = buildCSVText(dummyRows, Object.keys(dummyRows[0]), ";");
+    if (csvES.includes(";")) ok("toCSVExcelES (sep=;) → OK");
+    else err("toCSVExcelES → separador incorrecto");
+  } catch (e) {
+    err("excepción en build CSV: " + e.message);
+  }
+
+  hdr("Test rápido: parseo CSV");
+  try {
+    const csvSample = "patientId;prevalentCondition;sex\r\nP-001;PCSK9 / Dislipemia;M\r\nP-002;Diabetes;F\r\n";
+    const { headers, records, sep } = parseCSV(csvSample);
+    if (sep === ";" && headers.length === 3 && records.length === 2) {
+      ok("parseCSV (sep=;) → " + records.length + " filas, " + headers.length + " cols");
+    } else {
+      err("parseCSV → resultado inesperado sep=" + sep + " rows=" + records.length);
+    }
+    const csvComma = "id,name\n1,\"Doe, John\"\n";
+    const r2 = parseCSV(csvComma);
+    if (r2.sep === "," && r2.records[0].name === "Doe, John") {
+      ok("parseCSV (sep=,, quoted) → campo con coma OK");
+    } else {
+      err("parseCSV quoted → " + JSON.stringify(r2.records));
+    }
+  } catch (e) {
+    err("excepción en parseCSV: " + e.message);
+  }
+
+  hdr("Blob + URL.createObjectURL (prerequisito descarga)");
+  try {
+    const b   = new Blob(["test"], { type: "text/plain" });
+    const url = URL.createObjectURL(b);
+    if (url && url.startsWith("blob:")) {
+      ok("Blob + createObjectURL OK → " + url.slice(0, 40) + "…");
+    } else {
+      err("createObjectURL devolvió URL inesperada: " + url);
+    }
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    err("Blob/createObjectURL no soportado: " + e.message);
+  }
+
+  hdr("Estado de datos");
+  ok("Pacientes en memoria: " + APP.state.patients.length);
+  ok("Visitas en memoria: " + APP.state.visits.length);
+  ok("Intervenciones en memoria: " + APP.state.interventions.length);
+
+  out.textContent = lines.join("\n");
+}
+
+function initDebugPanel() {
+  if (!IS_DEV) return;
+  const panel = document.getElementById("debugPanel");
+  if (panel) {
+    panel.classList.remove("hidden");
+    devLog("[DEBUG] panel activado (IS_DEV=true)");
+  }
 }
 
 // ---------------- Init ----------------
@@ -2581,9 +2805,11 @@ async function init() {
   bindPatientsUI();
   bindExportUI();
   bindVisitDetailUI();
+  initDebugPanel();
 
   setView("patientsView");
   toast("Listo. Datos en local (IndexedDB).");
+  devLog("[INIT] app lista, versión", APP_VERSION);
 }
 
 init().catch((e) => {

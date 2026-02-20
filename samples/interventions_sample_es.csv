@@ -1,0 +1,5 @@
+interventionId;patientId;visitId;type;cmoDimension;description;status;outcomeNotes;createdAt;schemaVersion
+I-V-PCSK9-000001-2026-01-10-0;PCSK9-000001;V-PCSK9-000001-2026-01-10-001;CMO;Adherencia;Refuerzo motivacional adherencia PCSK9. Educar sobre autoinyección.;accepted;Paciente confirma técnica correcta.;2026-01-10T09:20:00.000Z;CMO-REGISTRY-1.2
+I-V-PCSK9-000001-2026-01-10-1;PCSK9-000001;V-PCSK9-000001-2026-01-10-001;CMO;Objetivo terapéutico;Ajuste de objetivo LDL a < 55 mg/dL según guías ESC 2021.;accepted;;2026-01-10T09:22:00.000Z;CMO-REGISTRY-1.2
+I-V-PCSK9-000002-2026-01-20-0;PCSK9-000002;V-PCSK9-000002-2026-01-20-001;CMO;Seguridad;Evaluación RAM: mialgias con rosuvastatina. Valorar cambio a atorvastatina.;pending;;2026-01-20T11:05:00.000Z;CMO-REGISTRY-1.2
+I-V-PCSK9-000002-2026-01-20-1;PCSK9-000002;V-PCSK9-000002-2026-01-20-001;CMO;Adherencia;Educación sobre importancia de adherencia en prevención secundaria. Material escrito.;accepted;Médico acepta derivación a enfermería para educación.;2026-01-20T11:08:00.000Z;CMO-REGISTRY-1.2
