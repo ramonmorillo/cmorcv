@@ -11,6 +11,13 @@
    - Modern UI + LDL chart (canvas) no external libs
 */
 
+const APP_VERSION = "20260220_1900";
+const IS_DEV = typeof window !== "undefined" &&
+  (location.hostname === "localhost" || location.hostname === "127.0.0.1" ||
+   new URLSearchParams(location.search).has("debug"));
+
+function devLog(...args) { if (IS_DEV) console.log("[CMO]", ...args); }
+
 const APP = {
   schemaVersion: "CMO-REGISTRY-1.2",
   dbName: "cmo_registry_db",
