@@ -39,7 +39,6 @@
         <div class="smallMuted" style="font-weight:700;color:var(--text)">Creado por Ramon Morillo</div>
         <div class="smallMuted">Febrero 2026</div>
         <div class="smallMuted" style="margin-top:6px">Datos guardados localmente (IndexedDB). Backup periodico recomendado.</div>
-        <button class="authBtn" id="btnAuthorship" aria-haspopup="dialog">ℹ Autoría y uso</button>
       </div>
     </aside>
 
@@ -393,147 +392,61 @@
         </div>
       </section>
 
-      <section id=”exportsView” class=”view hidden”>
-        <div class=”panel”>
-          <div class=”panelHeader”>
+      <section id="exportsView" class="view hidden">
+        <div class="panel">
+          <div class="panelHeader">
             <div>
-              <div class=”panelTitle”>Exportación e Importación</div>
-              <div class=”smallMuted”>CSV para Excel/investigación (sep. <b>;</b>, UTF-8 BOM) · Backup JSON para restauración exacta.</div>
-            </div>
-          </div>
-
-          <!-- ── Bloque A: Exportar CSV ── -->
-          <div class=”exBlock”>
-            <div class=”exBlockTitle”>⬇ Exportar CSV (Excel España)</div>
-            <div class=”smallMuted” style=”margin-bottom:12px”>
-              Separador: <code class=”inlineCode”>;</code> · Codificación: UTF-8 con BOM · Abre directamente en Excel sin configuración adicional.
-            </div>
-            <div class=”grid grid3”>
-              <div class=”card”>
-                <div class=”cardHeader”><div class=”cardTitle”>Pacientes</div></div>
-                <div class=”cardBody”>
-                  <div class=”smallMuted” style=”margin-bottom:10px”>
-                    Columnas: <code class=”inlineCode”>patientId</code>, <code class=”inlineCode”>prevalentCondition</code>, sex, birthYear, comorbidities, notes, status…
-                  </div>
-                  <div class=”btnRow”>
-                    <button class=”btn” id=”btnExportPatientsCSV”>⬇ patients.csv</button>
-                    <button class=”btn ghost” id=”btnTemplatePatients”>📄 Plantilla</button>
-                  </div>
-                </div>
-              </div>
-              <div class=”card”>
-                <div class=”cardHeader”><div class=”cardTitle”>Visitas</div></div>
-                <div class=”cardBody”>
-                  <div class=”smallMuted” style=”margin-bottom:10px”>
-                    Columnas: <code class=”inlineCode”>visitId</code>, <code class=”inlineCode”>patientId</code>, date, ldl, ldlTarget, cmoScore, priorityLevel…
-                  </div>
-                  <div class=”btnRow”>
-                    <button class=”btn” id=”btnExportVisitsCSV”>⬇ visits.csv</button>
-                    <button class=”btn ghost” id=”btnTemplateVisits”>📄 Plantilla</button>
-                  </div>
-                </div>
-              </div>
-              <div class=”card”>
-                <div class=”cardHeader”><div class=”cardTitle”>Intervenciones</div></div>
-                <div class=”cardBody”>
-                  <div class=”smallMuted” style=”margin-bottom:10px”>
-                    Columnas: <code class=”inlineCode”>interventionId</code>, <code class=”inlineCode”>patientId</code>, visitId, cmoDimension, description, status…
-                  </div>
-                  <div class=”btnRow”>
-                    <button class=”btn” id=”btnExportInterventionsCSV”>⬇ interventions.csv</button>
-                    <button class=”btn ghost” id=”btnTemplateInterventions”>📄 Plantilla</button>
-                  </div>
-                </div>
+              <div class="panelTitle">Exportación y copias de seguridad</div>
+              <div class="smallMuted">
+                CSV para Excel (investigación) + Backup JSON completo (migración/restauración).
               </div>
             </div>
           </div>
 
-          <div class=”divider”></div>
-
-          <!-- ── Bloque B: Importar CSV ── -->
-          <div class=”exBlock”>
-            <div class=”exBlockTitle”>⬆ Importar desde CSV</div>
-            <div class=”smallMuted” style=”margin-bottom:12px”>
-              Valida todo antes de guardar (transaccional). Acepta separador <b>;</b> o <b>,</b> y BOM.
-              Los registros con ID existente se <b>sobrescriben</b>. Para restauración completa usa el Backup JSON.
-            </div>
-            <div class=”grid grid3”>
-              <div class=”card”>
-                <div class=”cardHeader”><div class=”cardTitle”>Pacientes CSV</div></div>
-                <div class=”cardBody”>
-                  <div class=”smallMuted” style=”margin-bottom:10px”>
-                    Obligatorio: <code class=”inlineCode”>patientId</code>, <code class=”inlineCode”>prevalentCondition</code>
-                  </div>
-                  <label class=”btn ghost fileBtn exImportBtn”>
-                    ⬆ Importar patients.csv
-                    <input type=”file” id=”fileImportPatientsCSV” accept=”.csv,text/csv” />
-                  </label>
-                </div>
+          <div class="grid">
+            <div class="card">
+              <div class="cardHeader">
+                <div class="cardTitle">CSV (Excel)</div>
               </div>
-              <div class=”card”>
-                <div class=”cardHeader”><div class=”cardTitle”>Visitas CSV</div></div>
-                <div class=”cardBody”>
-                  <div class=”smallMuted” style=”margin-bottom:10px”>
-                    Obligatorio: <code class=”inlineCode”>visitId</code>, <code class=”inlineCode”>patientId</code>, <code class=”inlineCode”>date</code>
-                  </div>
-                  <label class=”btn ghost fileBtn exImportBtn”>
-                    ⬆ Importar visits.csv
-                    <input type=”file” id=”fileImportVisitsCSV” accept=”.csv,text/csv” />
-                  </label>
+              <div class="cardBody">
+                <div class="btnRow">
+                  <button class="btn" id="btnExportPatientsCSV">Export patients.csv</button>
+                  <button class="btn" id="btnExportVisitsCSV">Export visits.csv</button>
+                  <button class="btn" id="btnExportInterventionsCSV">Export interventions.csv</button>
                 </div>
-              </div>
-              <div class=”card”>
-                <div class=”cardHeader”><div class=”cardTitle”>Intervenciones CSV</div></div>
-                <div class=”cardBody”>
-                  <div class=”smallMuted” style=”margin-bottom:10px”>
-                    Obligatorio: <code class=”inlineCode”>interventionId</code>, <code class=”inlineCode”>patientId</code>, <code class=”inlineCode”>visitId</code>, <code class=”inlineCode”>cmoDimension</code>, <code class=”inlineCode”>description</code>, <code class=”inlineCode”>status</code>
-                  </div>
-                  <label class=”btn ghost fileBtn exImportBtn”>
-                    ⬆ Importar interventions.csv
-                    <input type=”file” id=”fileImportInterventionsCSV” accept=”.csv,text/csv” />
-                  </label>
+                <div class="smallMuted">
+                  Formato longitudinal (visitas e intervenciones normalizadas).
                 </div>
               </div>
             </div>
-          </div>
 
-          <div class=”divider”></div>
-
-          <!-- ── Bloque C: Backup JSON ── -->
-          <div class=”exBlock”>
-            <div class=”exBlockTitle”>💾 Backup / Restauración JSON</div>
-            <div class=”smallMuted” style=”margin-bottom:12px”>
-              Copia completa del estado (pacientes + visitas + intervenciones). Recomendado para migración exacta.<br>
-              Recomendación: backup semanal en ubicación corporativa autorizada.
-            </div>
-            <div class=”grid grid2”>
-              <div class=”card”>
-                <div class=”cardHeader”><div class=”cardTitle”>Exportar backup</div></div>
-                <div class=”cardBody”>
-                  <button class=”btn” id=”btnBackupJSON”>⬇ Exportar backup.json</button>
-                  <div class=”smallMuted” style=”margin-top:8px”>Incluye appName, versión y fecha de exportación.</div>
-                </div>
+            <div class="card">
+              <div class="cardHeader">
+                <div class="cardTitle">Backup JSON</div>
               </div>
-              <div class=”card”>
-                <div class=”cardHeader”><div class=”cardTitle”>Restaurar backup</div></div>
-                <div class=”cardBody”>
-                  <label class=”btn ghost fileBtn exImportBtn”>
-                    ⬆ Importar backup.json
-                    <input type=”file” id=”fileImportJSON” accept=”application/json” />
+              <div class="cardBody">
+                <div class="btnRow">
+                  <button class="btn" id="btnBackupJSON">⬇️ Export backup.json</button>
+                  <label class="btn ghost fileBtn">
+                    ⬆️ Importar backup.json
+                    <input type="file" id="fileImportJSON" accept="application/json" />
                   </label>
-                  <div class=”smallMuted” style=”margin-top:8px”>Valida appName y versión. Solicita confirmación antes de sobrescribir.</div>
+                </div>
+                <div class="smallMuted">
+                  Recomendación: backup semanal en ubicación corporativa autorizada.
                 </div>
               </div>
             </div>
-          </div>
 
-          <div class=”divider”></div>
-
-          <!-- ── Bloque D: PDF ── -->
-          <div class=”card”>
-            <div class=”cardHeader”><div class=”cardTitle”>Informe PDF (por navegador)</div></div>
-            <div class=”cardBody”>
-              <p class=”smallMuted”>Para PDF: abre la ficha del paciente y usa <b>Imprimir → Guardar como PDF</b>.</p>
+            <div class="card span2">
+              <div class="cardHeader">
+                <div class="cardTitle">Informe PDF (por navegador)</div>
+              </div>
+              <div class="cardBody">
+                <p class="smallMuted">
+                  Para PDF: abre la ficha del paciente y usa <b>Imprimir</b> → “Guardar como PDF”.
+                </p>
+              </div>
             </div>
           </div>
 
@@ -783,108 +696,6 @@
       </div>
 
     </main>
-  </div>
-
-  <!-- Mobile floating button (visible when sidebar is hidden) -->
-  <button class="authBtnMobile" id="btnAuthorshipMobile" aria-label="Autoría y uso" aria-haspopup="dialog">ℹ</button>
-
-  <!-- Modal: Autoría y uso -->
-  <div class="modal hidden" id="modalAuthorship" role="dialog" aria-modal="true" aria-labelledby="modalAuthorshipTitle">
-    <div class="modalBackdrop"></div>
-    <div class="modalCard amModal">
-      <div class="modalHeader">
-        <div class="modalTitle" id="modalAuthorshipTitle">CMO RCV — Autoría y uso</div>
-        <button class="iconBtn" id="btnCloseAuthorship" aria-label="Cerrar modal">✕</button>
-      </div>
-
-      <div class="modalBody amBody">
-        <div class="amIntro">
-          <div class="amIntroTitle">CMO RCV</div>
-          <div class="amIntroSub">Creado por Ramón Morillo &nbsp;·&nbsp; Febrero 2026 &nbsp;·&nbsp; Versión <span class="amVersionSpan"></span></div>
-        </div>
-
-        <!-- A) Autoría -->
-        <div class="amSection">
-          <div class="amSectionTitle">A) Autoría</div>
-          <p class="amText"><strong>Desarrollado por:</strong> Ramón Morillo</p>
-          <p class="amText"><strong>Asistencia técnica:</strong> Desarrollo asistido mediante herramientas de inteligencia artificial (Claude Code / Large Language Models).</p>
-        </div>
-
-        <!-- B) Base metodológica -->
-        <div class="amSection">
-          <div class="amSectionTitle">B) Base metodológica</div>
-          <p class="amText">CMO RCV se fundamenta en principios y marcos de referencia habituales en:</p>
-          <ul class="amList">
-            <li>Estratificación y evaluación del riesgo cardiovascular (enfoque clínico y de factores de riesgo).</li>
-            <li>Atención farmacéutica basada en el modelo CMO (Capacidad–Motivación–Oportunidad) aplicado a priorización y seguimiento.</li>
-            <li>Revisión estructurada de información clínica/autoinformada para apoyo a decisiones.</li>
-            <li>Conceptos metodológicos relacionados con:
-              <ul>
-                <li>Validez y coherencia interna de la información</li>
-                <li>Priorización asistencial</li>
-                <li>Enfoque centrado en la persona</li>
-                <li>Seguridad y adecuación farmacoterapéutica (cuando aplique)</li>
-              </ul>
-            </li>
-          </ul>
-        </div>
-
-        <!-- C) Declaración de independencia -->
-        <div class="amSection">
-          <div class="amSectionTitle">C) Declaración de independencia</div>
-          <p class="amText">CMO RCV es una herramienta independiente. No está afiliada, respaldada ni certificada oficialmente por:</p>
-          <ul class="amList">
-            <li>Administraciones sanitarias</li>
-            <li>Sociedades científicas</li>
-            <li>Agencias reguladoras</li>
-            <li>Instituciones sanitarias</li>
-          </ul>
-        </div>
-
-        <!-- D) Uso previsto y limitaciones -->
-        <div class="amSection">
-          <div class="amSectionTitle">D) Uso previsto y limitaciones</div>
-          <div class="amWarning">
-            CMO RCV <strong>NO</strong> sustituye el juicio clínico ni la valoración profesional.<br>
-            CMO RCV <strong>NO</strong> constituye una guía de práctica clínica ni una recomendación terapéutica directa.<br>
-            Funciona como herramienta de apoyo orientativa para estratificar/priorizar y organizar el seguimiento.
-          </div>
-          <p class="amText" style="margin-top:10px">Los resultados:</p>
-          <ul class="amList">
-            <li>Dependen de la información introducida.</li>
-            <li>Requieren interpretación profesional.</li>
-            <li>No garantizan conformidad con guías, normativas o protocolos locales.</li>
-          </ul>
-        </div>
-
-        <!-- E) Derechos y licencia -->
-        <div class="amSection">
-          <div class="amSectionTitle">E) Derechos y licencia</div>
-          <p class="amText">© 2026 Ramón Morillo. Todos los derechos reservados.</p>
-          <p class="amText">Queda prohibida la reproducción, redistribución o modificación total o parcial sin autorización expresa del autor.</p>
-        </div>
-
-        <!-- F) Cómo citar -->
-        <div class="amSection">
-          <div class="amSectionTitle">F) Cómo citar esta herramienta</div>
-          <p class="amText"><strong>APA (7.ª edición)</strong></p>
-          <div class="amMono">Morillo, R. (2026). <em>CMO RCV</em> (Versión <span class="amVersionSpan"></span>) [Software]. Disponible en: https://ramonmorillo.github.io/cmorcv/</div>
-          <p class="amText" style="margin-top:10px"><strong>Vancouver</strong></p>
-          <div class="amMono">Morillo R. CMO RCV. Version <span class="amVersionSpan"></span> [software]. 2026. Disponible en: https://ramonmorillo.github.io/cmorcv/</div>
-        </div>
-
-        <!-- G) Contacto -->
-        <div class="amSection">
-          <div class="amSectionTitle">G) Contacto</div>
-          <p class="amText">Para incidencias, sugerencias o colaboración académica:</p>
-          <p class="amText">✉ <a href="mailto:ralejandro.morillo.sspa@juntadeandalucia.es" class="amLink">ralejandro.morillo.sspa@juntadeandalucia.es</a></p>
-        </div>
-      </div>
-
-      <div class="modalFooter">
-        <button class="btn ghost" id="btnCloseAuthorshipFooter">Cerrar</button>
-      </div>
-    </div>
   </div>
 
   <script src="./app.js"></script>
