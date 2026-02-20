@@ -333,6 +333,8 @@ const APP = {
     interventions: [],
     selectedPatientId: null,
     selectedVisitId: null,
+    // Pending CSV batches (set by prepare*, consumed by apply*)
+    csvPending: { patients: null, visits: null, interventions: null },
   },
 };
 
@@ -384,12 +386,172 @@ function csvEscape(value) {
   return s;
 }
 
+// Default export: comma separator, no BOM (compatible with all tools)
 function toCSV(rows, headers) {
-  const lines = [];
-  lines.push(headers.map(csvEscape).join(","));
-  for (const r of rows) lines.push(headers.map((h) => csvEscape(r[h])).join(","));
-  return lines.join("\n");
+  const lines = [headers.map(csvEscape).join(",")];
+  for (const r of rows) lines.push(headers.map((h) => csvEscape(r[h] ?? "")).join(","));
+  return lines.join("\r\n");
 }
+
+// Excel España export: semicolon separator, UTF-8 BOM
+function csvEscapeSemi(value) {
+  const s = value === null || value === undefined ? "" : String(value);
+  if (/[;",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+function toCSVExcelES(rows, headers) {
+  const lines = [headers.map(csvEscapeSemi).join(";")];
+  for (const r of rows) lines.push(headers.map((h) => csvEscapeSemi(r[h] ?? "")).join(";"));
+  return "\uFEFF" + lines.join("\r\n"); // UTF-8 BOM + CRLF
+}
+
+// Normalize various date formats → YYYY-MM-DD. Returns null if unparseable.
+function parseFlexDate(str) {
+  if (!str) return null;
+  const s = str.trim();
+  // Already YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  // DD/MM/YYYY or DD-MM-YYYY (Spain / Excel ES)
+  const m1 = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (m1) return `${m1[3]}-${m1[2].padStart(2,"0")}-${m1[1].padStart(2,"0")}`;
+  // YYYY/MM/DD
+  const m2 = s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+  if (m2) return `${m2[1]}-${m2[2].padStart(2,"0")}-${m2[3].padStart(2,"0")}`;
+  return null;
+}
+
+// ---------------- CSV parser (RFC4180, BOM-aware, auto-delimiter) ----------------
+
+function parseCSV(rawText) {
+  // Strip UTF-8 BOM if present
+  let text = rawText.charCodeAt(0) === 0xFEFF ? rawText.slice(1) : rawText;
+
+  // Auto-detect delimiter: count occurrences in first line outside quotes
+  let inQ = false, semiCount = 0, commaCount = 0;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (c === '"') { inQ = !inQ; continue; }
+    if (inQ) continue;
+    if (c === "\n") break;
+    if (c === ";") semiCount++;
+    else if (c === ",") commaCount++;
+  }
+  const sep = semiCount >= commaCount ? ";" : ",";
+
+  // RFC4180 character-by-character parser (handles quoted fields, CRLF, embedded newlines)
+  const rows = [];
+  let row = [], field = "";
+  inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQ) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; } // escaped ""
+        else inQ = false;                               // closing quote
+      } else field += c;
+    } else {
+      if (c === '"') { inQ = true; }
+      else if (c === sep)  { row.push(field); field = ""; }
+      else if (c === "\r" && text[i + 1] === "\n") { row.push(field); field = ""; rows.push(row); row = []; i++; }
+      else if (c === "\n") { row.push(field); field = ""; rows.push(row); row = []; }
+      else field += c;
+    }
+  }
+  row.push(field);
+  if (row.some((f) => f !== "")) rows.push(row);
+
+  // Drop trailing blank rows
+  while (rows.length && rows[rows.length - 1].every((f) => f === "")) rows.pop();
+
+  if (!rows.length) return { headers: [], records: [], sep };
+
+  const headers = rows[0].map((h) => h.trim());
+  const records = rows.slice(1).map((r) => {
+    const obj = {};
+    headers.forEach((h, i) => { obj[h] = r[i] ?? ""; });
+    return obj;
+  });
+
+  return { headers, records, sep };
+}
+
+// Validates parsed records against a CSV_SCHEMA field list.
+// Returns array of error strings (empty = valid).
+function validateCSVImport(records, schemaFields) {
+  const errors = [];
+  for (let i = 0; i < records.length; i++) {
+    const rec = records[i];
+    const rowNum = i + 2; // row 1 = header, data starts at row 2
+    for (const field of schemaFields) {
+      const val = rec[field.key] ?? "";
+      if (field.required && val === "") {
+        errors.push(`Fila ${rowNum}: columna obligatoria "${field.key}" está vacía.`);
+        continue;
+      }
+      if (!val) continue; // optional & empty → skip type checks
+      if (field.type === "number") {
+        if (safeNum(val) === null) errors.push(`Fila ${rowNum}: "${field.key}" debe ser número (se encontró "${val}").`);
+      } else if (field.type === "date") {
+        if (!parseFlexDate(val)) errors.push(`Fila ${rowNum}: "${field.key}" debe ser fecha YYYY-MM-DD o DD/MM/YYYY (se encontró "${val}").`);
+      } else if (field.type === "boolean") {
+        if (!["true", "false"].includes(val.toLowerCase())) errors.push(`Fila ${rowNum}: "${field.key}" debe ser "true" o "false" (se encontró "${val}").`);
+      } else if (field.type === "enum" && field.values) {
+        if (!field.values.includes(val)) errors.push(`Fila ${rowNum}: "${field.key}" debe ser uno de [${field.values.join(", ")}] (se encontró "${val}").`);
+      }
+    }
+  }
+  return errors;
+}
+
+// ---------------- CSV Schema (data dictionary) ----------------
+// Single source of truth for CSV headers, types and validation.
+// To add/rename fields: edit here; exports and imports update automatically.
+
+const CSV_SCHEMA = {
+  patients: [
+    { key: "patientId",           required: true,  type: "string" },
+    { key: "prevalentCondition",  required: true,  type: "string" },
+    { key: "sex",                 required: false, type: "string" },
+    { key: "birthYear",           required: false, type: "number" },
+    { key: "comorbidities",       required: false, type: "string" },
+    { key: "notes",               required: false, type: "string" },
+    { key: "status",              required: false, type: "enum",   values: ["active", "inactive"] },
+    { key: "createdAt",           required: false, type: "string" },
+    { key: "schemaVersion",       required: false, type: "string" },
+  ],
+  visits: [
+    { key: "visitId",             required: true,  type: "string" },
+    { key: "patientId",           required: true,  type: "string" },
+    { key: "date",                required: true,  type: "date"   },
+    { key: "hospitalDrug",        required: false, type: "string" },
+    { key: "ldl",                 required: false, type: "number" },
+    { key: "ldlTarget",           required: false, type: "number" },
+    { key: "ldlGoalAchieved",     required: false, type: "boolean" },
+    { key: "treatment",           required: false, type: "string" },
+    { key: "adherence",           required: false, type: "string" },
+    { key: "ram",                 required: false, type: "string" },
+    { key: "cmoScore",            required: false, type: "number" },
+    { key: "priorityLevel",       required: false, type: "number" },
+    { key: "priorityJustification", required: false, type: "string" },
+    { key: "oftObjectives",       required: false, type: "string" },
+    { key: "followUpPlan",        required: false, type: "string" },
+    { key: "stratVars_json",      required: false, type: "string" }, // JSON-serialized stratification vars
+    { key: "createdAt",           required: false, type: "string" },
+    { key: "schemaVersion",       required: false, type: "string" },
+  ],
+  interventions: [
+    { key: "interventionId",  required: true,  type: "string" },
+    { key: "patientId",       required: true,  type: "string" },
+    { key: "visitId",         required: true,  type: "string" },
+    { key: "type",            required: false, type: "string" },
+    { key: "cmoDimension",    required: true,  type: "string" },
+    { key: "description",     required: true,  type: "string" },
+    { key: "status",          required: true,  type: "enum",   values: ["accepted", "pending", "rejected"] },
+    { key: "outcomeNotes",    required: false, type: "string" },
+    { key: "createdAt",       required: false, type: "string" },
+    { key: "schemaVersion",   required: false, type: "string" },
+  ],
+};
 
 // ---------------- IndexedDB ----------------
 
@@ -1931,7 +2093,319 @@ async function exportInterventionsCSV() {
   const rows = interventionsForCSV();
   const headers = Object.keys(rows[0] || {});
   downloadText("interventions.csv", toCSV(rows, headers), "text/csv;charset=utf-8");
-  toast("interventions.csv exportado.");
+  toast(`interventions.csv exportado (${rows.length} filas).`);
+}
+
+// --- CSV Template downloads (header + 1 example row) ---
+
+function downloadPatientsTemplate() {
+  const headers = CSV_SCHEMA.patients.map((f) => f.key);
+  const example = {
+    patientId: "PCSK9-000001", prevalentCondition: "PCSK9 / Dislipemia",
+    sex: "M", birthYear: "1972", comorbidities: "DM2; ERC",
+    notes: "Observaciones del caso", status: "active", createdAt: "", schemaVersion: "",
+  };
+  downloadText("patients_template.csv", toCSV([example], headers), "text/csv;charset=utf-8");
+  toast("patients_template.csv descargada.");
+}
+
+function downloadVisitsTemplate() {
+  const headers = CSV_SCHEMA.visits.map((f) => f.key);
+  const example = {
+    visitId: "V-PCSK9-000001-2026-02-20-abc123", patientId: "PCSK9-000001",
+    date: "2026-02-20", hospitalDrug: "Evolocumab 140 mg",
+    ldl: "55", ldlTarget: "55", ldlGoalAchieved: "true",
+    treatment: "PCSK9 + estatina + ezetimiba", adherence: "Buena", ram: "",
+    cmoScore: "18", priorityLevel: "2",
+    priorityJustification: "No objetivo + baja adherencia",
+    oftObjectives: "Reducir LDL <55 mg/dL", followUpPlan: "Revisión 3 meses",
+    stratVars_json: "", createdAt: "", schemaVersion: "",
+  };
+  downloadText("visits_template.csv", toCSV([example], headers), "text/csv;charset=utf-8");
+  toast("visits_template.csv descargada.");
+}
+
+function downloadInterventionsTemplate() {
+  const headers = CSV_SCHEMA.interventions.map((f) => f.key);
+  const example = {
+    interventionId: "I-V-PCSK9-000001-2026-02-20-0-def456",
+    patientId: "PCSK9-000001", visitId: "V-PCSK9-000001-2026-02-20-abc123",
+    type: "CMO", cmoDimension: "Capacidad",
+    description: "Educación sobre tratamiento",
+    status: "accepted", outcomeNotes: "Paciente refiere comprensión correcta",
+    createdAt: "", schemaVersion: "",
+  };
+  downloadText("interventions_template.csv", toCSV([example], headers), "text/csv;charset=utf-8");
+  toast("interventions_template.csv descargada.");
+}
+
+// --- CSV Import: UI preview helpers ---
+
+// Renders a result panel for a given entity ("patients"|"visits"|"interventions").
+// result: { valid, errors, created, updated, extraCols }
+function showImportPreview(entity, result) {
+  const previewEl = document.getElementById(`impPreview_${entity}`);
+  const statsEl   = document.getElementById(`impStats_${entity}`);
+  const errorsEl  = document.getElementById(`impErrors_${entity}`);
+  const applyBtn  = document.getElementById(`btnApply_${entity}`);
+  if (!previewEl || !statsEl || !errorsEl) return;
+
+  const { valid, errors, created, updated, extraCols } = result;
+
+  let statsHtml =
+    `<div class="impStatRow">` +
+    `<span class="impStat impStat--ok"><b>${created}</b> nuevos</span>` +
+    `<span class="impStat impStat--upd"><b>${updated}</b> actualizados</span>` +
+    `<span class="impStat impStat--err"><b>${errors.length}</b> error${errors.length !== 1 ? "es" : ""}</span>` +
+    `</div>`;
+
+  if (extraCols.length) {
+    statsHtml += `<div class="smallMuted" style="margin-top:6px">⚠ Columnas extra ignoradas: ${extraCols.map((c) => `<code class="inlineCode">${esc(c)}</code>`).join(", ")}</div>`;
+  }
+  statsEl.innerHTML = statsHtml;
+
+  if (errors.length) {
+    errorsEl.classList.remove("hidden");
+    errorsEl.innerHTML =
+      `<div class="impErrorTitle">${errors.length > 8 ? `Primeros 8 de ${errors.length} errores:` : `${errors.length} error(es):`}</div>` +
+      errors.slice(0, 8).map((e) => `<div class="impErrorRow">${esc(e)}</div>`).join("");
+  } else {
+    errorsEl.classList.add("hidden");
+    errorsEl.innerHTML = "";
+  }
+
+  previewEl.classList.remove("hidden");
+
+  if (applyBtn) {
+    applyBtn.disabled = valid.length === 0;
+    applyBtn.textContent = `Aplicar (${valid.length} fila${valid.length !== 1 ? "s" : ""})`;
+  }
+}
+
+function hideImportPreview(entity) {
+  const el = document.getElementById(`impPreview_${entity}`);
+  if (el) el.classList.add("hidden");
+  APP.state.csvPending[entity] = null;
+  // Reset the file input so the same file can be re-selected
+  const fileInputId = { patients: "fileImportPatientsCSV", visits: "fileImportVisitsCSV", interventions: "fileImportInterventionsCSV" };
+  const fi = document.getElementById(fileInputId[entity]);
+  if (fi) fi.value = "";
+}
+
+// Parses and validates a CSV file, populates APP.state.csvPending[entity], shows preview.
+// Referential integrity knownPatientIds / knownVisitIds are optional Sets for visit/intervention checks.
+function _parseCsvAndPreview(entity, rawText, schema, buildRow, knownPatientIds, knownVisitIds) {
+  const { headers, records } = parseCSV(rawText);
+  if (!records.length) { toast("El CSV no contiene datos."); return; }
+
+  const schemaKeys   = schema.map((f) => f.key);
+  const requiredKeys = schema.filter((f) => f.required).map((f) => f.key);
+
+  const missingRequired = requiredKeys.filter((k) => !headers.includes(k));
+  if (missingRequired.length) {
+    alert(`CSV inválido: faltan columnas obligatorias:\n${missingRequired.join(", ")}`);
+    return;
+  }
+
+  const extraCols = headers.filter((h) => !schemaKeys.includes(h));
+  const errors    = validateCSVImport(records, schema); // schema-level errors
+
+  // Determine existing IDs for upsert stats
+  const existingPatIds = new Set(APP.state.patients.map((p) => p.patientId));
+  const existingVisIds = new Set(APP.state.visits.map((v) => v.visitId));
+  const existingIvIds  = new Set(APP.state.interventions.map((i) => i.interventionId));
+
+  // Row-error index for quick skip
+  const rowsWithSchemaError = new Set(
+    errors.map((e) => { const m = e.match(/^Fila (\d+):/); return m ? Number(m[1]) : -1; })
+  );
+
+  const valid   = [];
+  let created   = 0;
+  let updated   = 0;
+
+  for (let i = 0; i < records.length; i++) {
+    const rec    = records[i];
+    const rowNum = i + 2;
+    if (rowsWithSchemaError.has(rowNum)) continue;
+
+    // Referential integrity for visits
+    if (knownPatientIds && !knownPatientIds.has(rec.patientId)) {
+      errors.push(`Fila ${rowNum}: patientId "${rec.patientId}" no existe en la BD ni en este lote.`);
+      continue;
+    }
+    // Referential integrity for interventions
+    if (knownVisitIds && !knownVisitIds.has(rec.visitId)) {
+      errors.push(`Fila ${rowNum}: visitId "${rec.visitId}" no existe en la BD ni en este lote.`);
+      continue;
+    }
+    if (knownVisitIds && knownPatientIds && !knownPatientIds.has(rec.patientId)) {
+      errors.push(`Fila ${rowNum}: patientId "${rec.patientId}" no existe en la BD ni en este lote.`);
+      continue;
+    }
+
+    const row = buildRow(rec);
+    valid.push(row);
+
+    // Count create vs update
+    if (entity === "patients") {
+      if (existingPatIds.has(row.patientId)) updated++; else created++;
+    } else if (entity === "visits") {
+      if (existingVisIds.has(row.visitId))   updated++; else created++;
+    } else {
+      if (existingIvIds.has(row.interventionId)) updated++; else created++;
+    }
+  }
+
+  APP.state.csvPending[entity] = valid;
+  showImportPreview(entity, { valid, errors, created, updated, extraCols });
+}
+
+// --- Prepare functions (parse → validate → store pending → show preview) ---
+
+async function prepareImportPatientsCSV(file) {
+  let rawText; try { rawText = await file.text(); } catch { return toast("Error leyendo archivo."); }
+  const buildRow = (rec) => ({
+    patientId:          rec.patientId,
+    prevalentCondition: rec.prevalentCondition || "",
+    sex:                rec.sex || null,
+    birthYear:          rec.birthYear ? safeNum(rec.birthYear) : null,
+    comorbidities:      rec.comorbidities || null,
+    notes:              rec.notes || null,
+    status:             rec.status || "active",
+    stratVars: {}, cmoScore: 0, priorityLevel: 3,
+    createdAt:          rec.createdAt || new Date().toISOString(),
+    schemaVersion:      APP.schemaVersion,
+  });
+  _parseCsvAndPreview("patients", rawText, CSV_SCHEMA.patients, buildRow);
+}
+
+async function prepareImportVisitsCSV(file) {
+  let rawText; try { rawText = await file.text(); } catch { return toast("Error leyendo archivo."); }
+  // Known patient IDs: existing DB + any pending patients batch
+  const knownPatIds = new Set([
+    ...APP.state.patients.map((p) => p.patientId),
+    ...(APP.state.csvPending.patients || []).map((p) => p.patientId),
+  ]);
+  const buildRow = (rec) => {
+    let stratVars = {};
+    if (rec.stratVars_json) { try { stratVars = JSON.parse(rec.stratVars_json); } catch {} }
+    const goal = (rec.ldlGoalAchieved || "").toLowerCase();
+    return {
+      visitId:               rec.visitId,
+      patientId:             rec.patientId,
+      date:                  parseFlexDate(rec.date) || rec.date,
+      hospitalDrug:          rec.hospitalDrug || "—",
+      ldl:                   rec.ldl ? safeNum(rec.ldl) : null,
+      ldlTarget:             rec.ldlTarget ? safeNum(rec.ldlTarget) : null,
+      ldlGoalAchieved:       goal === "true" ? true : goal === "false" ? false : null,
+      treatment:             rec.treatment || null,
+      adherence:             rec.adherence || null,
+      ram:                   rec.ram || null,
+      cmoScore:              rec.cmoScore ? safeNum(rec.cmoScore) : 0,
+      priorityLevel:         rec.priorityLevel ? safeNum(rec.priorityLevel) : 3,
+      priorityJustification: rec.priorityJustification || null,
+      oftObjectives:         rec.oftObjectives || null,
+      followUpPlan:          rec.followUpPlan || null,
+      nextVisitSuggested:    null,
+      stratVars,
+      createdAt:    rec.createdAt || new Date().toISOString(),
+      schemaVersion: APP.schemaVersion,
+    };
+  };
+  _parseCsvAndPreview("visits", rawText, CSV_SCHEMA.visits, buildRow, knownPatIds, null);
+}
+
+async function prepareImportInterventionsCSV(file) {
+  let rawText; try { rawText = await file.text(); } catch { return toast("Error leyendo archivo."); }
+  const knownPatIds = new Set([
+    ...APP.state.patients.map((p) => p.patientId),
+    ...(APP.state.csvPending.patients || []).map((p) => p.patientId),
+  ]);
+  const knownVisIds = new Set([
+    ...APP.state.visits.map((v) => v.visitId),
+    ...(APP.state.csvPending.visits || []).map((v) => v.visitId),
+  ]);
+  const buildRow = (rec) => ({
+    interventionId: rec.interventionId,
+    patientId:      rec.patientId,
+    visitId:        rec.visitId,
+    type:           rec.type || "CMO",
+    cmoDimension:   rec.cmoDimension,
+    description:    rec.description,
+    status:         rec.status,
+    outcomeNotes:   rec.outcomeNotes || null,
+    createdAt:      rec.createdAt || new Date().toISOString(),
+    schemaVersion:  APP.schemaVersion,
+  });
+  _parseCsvAndPreview("interventions", rawText, CSV_SCHEMA.interventions, buildRow, knownPatIds, knownVisIds);
+}
+
+// --- Apply functions (write pending batch to IndexedDB) ---
+
+async function applyImportPatientsCSV() {
+  const pending = APP.state.csvPending.patients;
+  if (!pending?.length) return toast("Nada pendiente.");
+  for (const p of pending) {
+    await dbPut(APP.stores.patients, p);
+    const idx = APP.state.patients.findIndex((x) => x.patientId === p.patientId);
+    if (idx >= 0) APP.state.patients[idx] = p; else APP.state.patients.push(p);
+  }
+  hideImportPreview("patients");
+  fillConditionSelectors(); updateStats(); renderPatientsTable();
+  toast(`✔ ${pending.length} paciente(s) aplicados.`);
+}
+
+async function applyImportVisitsCSV() {
+  const pending = APP.state.csvPending.visits;
+  if (!pending?.length) return toast("Nada pendiente.");
+  for (const v of pending) {
+    await dbPut(APP.stores.visits, v);
+    const idx = APP.state.visits.findIndex((x) => x.visitId === v.visitId);
+    if (idx >= 0) APP.state.visits[idx] = v; else APP.state.visits.push(v);
+  }
+  hideImportPreview("visits");
+  updateStats(); renderPatientsTable();
+  if (APP.state.selectedPatientId) openPatient(APP.state.selectedPatientId);
+  toast(`✔ ${pending.length} visita(s) aplicadas.`);
+}
+
+async function applyImportInterventionsCSV() {
+  const pending = APP.state.csvPending.interventions;
+  if (!pending?.length) return toast("Nada pendiente.");
+  for (const iv of pending) {
+    await dbPut(APP.stores.interventions, iv);
+    const idx = APP.state.interventions.findIndex((x) => x.interventionId === iv.interventionId);
+    if (idx >= 0) APP.state.interventions[idx] = iv; else APP.state.interventions.push(iv);
+  }
+  hideImportPreview("interventions");
+  toast(`✔ ${pending.length} intervención/es aplicadas.`);
+}
+
+// --- Excel España export variants (semicolon + BOM) ---
+
+async function exportPatientsCSVExcelES() {
+  const rows = patientsForCSV();
+  if (!rows.length) return toast("No hay pacientes para exportar.");
+  const headers = CSV_SCHEMA.patients.map((f) => f.key);
+  downloadText("patients_excelES.csv", toCSVExcelES(rows, headers), "text/csv;charset=utf-8");
+  toast(`patients_excelES.csv exportado (${rows.length} filas).`);
+}
+
+async function exportVisitsCSVExcelES() {
+  const rows = visitsForCSV();
+  if (!rows.length) return toast("No hay visitas para exportar.");
+  const headers = CSV_SCHEMA.visits.map((f) => f.key);
+  downloadText("visits_excelES.csv", toCSVExcelES(rows, headers), "text/csv;charset=utf-8");
+  toast(`visits_excelES.csv exportado (${rows.length} filas).`);
+}
+
+async function exportInterventionsCSVExcelES() {
+  const rows = interventionsForCSV();
+  if (!rows.length) return toast("No hay intervenciones para exportar.");
+  const headers = CSV_SCHEMA.interventions.map((f) => f.key);
+  downloadText("interventions_excelES.csv", toCSVExcelES(rows, headers), "text/csv;charset=utf-8");
+  toast(`interventions_excelES.csv exportado (${rows.length} filas).`);
 }
 
 async function backupJSON() {
@@ -2025,14 +2499,61 @@ function bindPatientsUI() {
 }
 
 function bindExportUI() {
-  $("#btnExportPatientsCSV").addEventListener("click", exportPatientsCSV);
-  $("#btnExportVisitsCSV").addEventListener("click", exportVisitsCSV);
-  $("#btnExportInterventionsCSV").addEventListener("click", exportInterventionsCSV);
-  $("#btnBackupJSON").addEventListener("click", backupJSON);
+  function bind(sel, handler) {
+    const el = document.querySelector(sel);
+    if (el) el.addEventListener("click", handler);
+  }
+  function bindChange(sel, handler) {
+    const el = document.querySelector(sel);
+    if (el) el.addEventListener("change", handler);
+  }
 
-  $("#btnQuickBackup").addEventListener("click", backupJSON);
+  // --- CSV export (standard comma) ---
+  bind("#btnExportPatientsCSV",      exportPatientsCSV);
+  bind("#btnExportVisitsCSV",        exportVisitsCSV);
+  bind("#btnExportInterventionsCSV", exportInterventionsCSV);
 
-  $("#fileImportJSON").addEventListener("change", (ev) => {
+  // --- CSV export (Excel ES: semicolon + BOM) ---
+  bind("#btnExportPatientsCSVES",      exportPatientsCSVExcelES);
+  bind("#btnExportVisitsCSVES",        exportVisitsCSVExcelES);
+  bind("#btnExportInterventionsCSVES", exportInterventionsCSVExcelES);
+
+  // --- CSV templates ---
+  bind("#btnTemplatePatients",      downloadPatientsTemplate);
+  bind("#btnTemplateVisits",        downloadVisitsTemplate);
+  bind("#btnTemplateInterventions", downloadInterventionsTemplate);
+
+  // --- CSV import: phase 1 (parse + preview) ---
+  const csvPrepareMap = [
+    { sel: "#fileImportPatientsCSV",      fn: prepareImportPatientsCSV },
+    { sel: "#fileImportVisitsCSV",        fn: prepareImportVisitsCSV },
+    { sel: "#fileImportInterventionsCSV", fn: prepareImportInterventionsCSV },
+  ];
+  for (const { sel, fn } of csvPrepareMap) {
+    const el = document.querySelector(sel);
+    if (!el) continue;
+    el.addEventListener("change", (ev) => {
+      const f = ev.target.files?.[0];
+      if (!f) return;
+      fn(f);
+      // keep ev.target.value so the same file can be re-selected after cancel
+    });
+  }
+
+  // --- CSV import: phase 2 (apply) ---
+  bind("#btnApply_patients",      applyImportPatientsCSV);
+  bind("#btnApply_visits",        applyImportVisitsCSV);
+  bind("#btnApply_interventions", applyImportInterventionsCSV);
+
+  // --- CSV import: cancel (hide preview) ---
+  bind("#btnCancel_patients",      () => hideImportPreview("patients"));
+  bind("#btnCancel_visits",        () => hideImportPreview("visits"));
+  bind("#btnCancel_interventions", () => hideImportPreview("interventions"));
+
+  // --- JSON backup / restore ---
+  bind("#btnBackupJSON",  backupJSON);
+  bind("#btnQuickBackup", backupJSON);
+  bindChange("#fileImportJSON", (ev) => {
     const f = ev.target.files?.[0];
     if (!f) return;
     importJSON(f);
