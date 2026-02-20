@@ -582,6 +582,30 @@ label{font-size:12px; color: var(--muted); font-weight:800}
 }
 .amLink:hover { text-decoration: underline }
 
+/* ---- Export view blocks ---- */
+.exBlock {
+  margin-bottom: 6px;
+}
+.exBlockTitle {
+  font-weight: 900;
+  font-size: 14px;
+  color: var(--text);
+  margin-bottom: 10px;
+}
+.inlineCode {
+  font-family: var(--mono);
+  font-size: 11px;
+  background: rgba(0,0,0,.05);
+  border: 1px solid rgba(0,0,0,.10);
+  border-radius: 5px;
+  padding: 1px 5px;
+  color: var(--accent);
+}
+.exImportBtn {
+  width: 100%;
+  justify-content: center;
+}
+
 @media (max-width: 1100px){
   .sidebar{display:none}
   .authBtnMobile{display:flex}

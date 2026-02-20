@@ -393,61 +393,147 @@
         </div>
       </section>
 
-      <section id="exportsView" class="view hidden">
-        <div class="panel">
-          <div class="panelHeader">
+      <section id=”exportsView” class=”view hidden”>
+        <div class=”panel”>
+          <div class=”panelHeader”>
             <div>
-              <div class="panelTitle">Exportación y copias de seguridad</div>
-              <div class="smallMuted">
-                CSV para Excel (investigación) + Backup JSON completo (migración/restauración).
+              <div class=”panelTitle”>Exportación e Importación</div>
+              <div class=”smallMuted”>CSV para Excel/investigación (sep. <b>;</b>, UTF-8 BOM) · Backup JSON para restauración exacta.</div>
+            </div>
+          </div>
+
+          <!-- ── Bloque A: Exportar CSV ── -->
+          <div class=”exBlock”>
+            <div class=”exBlockTitle”>⬇ Exportar CSV (Excel España)</div>
+            <div class=”smallMuted” style=”margin-bottom:12px”>
+              Separador: <code class=”inlineCode”>;</code> · Codificación: UTF-8 con BOM · Abre directamente en Excel sin configuración adicional.
+            </div>
+            <div class=”grid grid3”>
+              <div class=”card”>
+                <div class=”cardHeader”><div class=”cardTitle”>Pacientes</div></div>
+                <div class=”cardBody”>
+                  <div class=”smallMuted” style=”margin-bottom:10px”>
+                    Columnas: <code class=”inlineCode”>patientId</code>, <code class=”inlineCode”>prevalentCondition</code>, sex, birthYear, comorbidities, notes, status…
+                  </div>
+                  <div class=”btnRow”>
+                    <button class=”btn” id=”btnExportPatientsCSV”>⬇ patients.csv</button>
+                    <button class=”btn ghost” id=”btnTemplatePatients”>📄 Plantilla</button>
+                  </div>
+                </div>
+              </div>
+              <div class=”card”>
+                <div class=”cardHeader”><div class=”cardTitle”>Visitas</div></div>
+                <div class=”cardBody”>
+                  <div class=”smallMuted” style=”margin-bottom:10px”>
+                    Columnas: <code class=”inlineCode”>visitId</code>, <code class=”inlineCode”>patientId</code>, date, ldl, ldlTarget, cmoScore, priorityLevel…
+                  </div>
+                  <div class=”btnRow”>
+                    <button class=”btn” id=”btnExportVisitsCSV”>⬇ visits.csv</button>
+                    <button class=”btn ghost” id=”btnTemplateVisits”>📄 Plantilla</button>
+                  </div>
+                </div>
+              </div>
+              <div class=”card”>
+                <div class=”cardHeader”><div class=”cardTitle”>Intervenciones</div></div>
+                <div class=”cardBody”>
+                  <div class=”smallMuted” style=”margin-bottom:10px”>
+                    Columnas: <code class=”inlineCode”>interventionId</code>, <code class=”inlineCode”>patientId</code>, visitId, cmoDimension, description, status…
+                  </div>
+                  <div class=”btnRow”>
+                    <button class=”btn” id=”btnExportInterventionsCSV”>⬇ interventions.csv</button>
+                    <button class=”btn ghost” id=”btnTemplateInterventions”>📄 Plantilla</button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
 
-          <div class="grid">
-            <div class="card">
-              <div class="cardHeader">
-                <div class="cardTitle">CSV (Excel)</div>
-              </div>
-              <div class="cardBody">
-                <div class="btnRow">
-                  <button class="btn" id="btnExportPatientsCSV">Export patients.csv</button>
-                  <button class="btn" id="btnExportVisitsCSV">Export visits.csv</button>
-                  <button class="btn" id="btnExportInterventionsCSV">Export interventions.csv</button>
-                </div>
-                <div class="smallMuted">
-                  Formato longitudinal (visitas e intervenciones normalizadas).
-                </div>
-              </div>
-            </div>
+          <div class=”divider”></div>
 
-            <div class="card">
-              <div class="cardHeader">
-                <div class="cardTitle">Backup JSON</div>
-              </div>
-              <div class="cardBody">
-                <div class="btnRow">
-                  <button class="btn" id="btnBackupJSON">⬇️ Export backup.json</button>
-                  <label class="btn ghost fileBtn">
-                    ⬆️ Importar backup.json
-                    <input type="file" id="fileImportJSON" accept="application/json" />
+          <!-- ── Bloque B: Importar CSV ── -->
+          <div class=”exBlock”>
+            <div class=”exBlockTitle”>⬆ Importar desde CSV</div>
+            <div class=”smallMuted” style=”margin-bottom:12px”>
+              Valida todo antes de guardar (transaccional). Acepta separador <b>;</b> o <b>,</b> y BOM.
+              Los registros con ID existente se <b>sobrescriben</b>. Para restauración completa usa el Backup JSON.
+            </div>
+            <div class=”grid grid3”>
+              <div class=”card”>
+                <div class=”cardHeader”><div class=”cardTitle”>Pacientes CSV</div></div>
+                <div class=”cardBody”>
+                  <div class=”smallMuted” style=”margin-bottom:10px”>
+                    Obligatorio: <code class=”inlineCode”>patientId</code>, <code class=”inlineCode”>prevalentCondition</code>
+                  </div>
+                  <label class=”btn ghost fileBtn exImportBtn”>
+                    ⬆ Importar patients.csv
+                    <input type=”file” id=”fileImportPatientsCSV” accept=”.csv,text/csv” />
                   </label>
                 </div>
-                <div class="smallMuted">
-                  Recomendación: backup semanal en ubicación corporativa autorizada.
+              </div>
+              <div class=”card”>
+                <div class=”cardHeader”><div class=”cardTitle”>Visitas CSV</div></div>
+                <div class=”cardBody”>
+                  <div class=”smallMuted” style=”margin-bottom:10px”>
+                    Obligatorio: <code class=”inlineCode”>visitId</code>, <code class=”inlineCode”>patientId</code>, <code class=”inlineCode”>date</code>
+                  </div>
+                  <label class=”btn ghost fileBtn exImportBtn”>
+                    ⬆ Importar visits.csv
+                    <input type=”file” id=”fileImportVisitsCSV” accept=”.csv,text/csv” />
+                  </label>
+                </div>
+              </div>
+              <div class=”card”>
+                <div class=”cardHeader”><div class=”cardTitle”>Intervenciones CSV</div></div>
+                <div class=”cardBody”>
+                  <div class=”smallMuted” style=”margin-bottom:10px”>
+                    Obligatorio: <code class=”inlineCode”>interventionId</code>, <code class=”inlineCode”>patientId</code>, <code class=”inlineCode”>visitId</code>, <code class=”inlineCode”>cmoDimension</code>, <code class=”inlineCode”>description</code>, <code class=”inlineCode”>status</code>
+                  </div>
+                  <label class=”btn ghost fileBtn exImportBtn”>
+                    ⬆ Importar interventions.csv
+                    <input type=”file” id=”fileImportInterventionsCSV” accept=”.csv,text/csv” />
+                  </label>
                 </div>
               </div>
             </div>
+          </div>
 
-            <div class="card span2">
-              <div class="cardHeader">
-                <div class="cardTitle">Informe PDF (por navegador)</div>
+          <div class=”divider”></div>
+
+          <!-- ── Bloque C: Backup JSON ── -->
+          <div class=”exBlock”>
+            <div class=”exBlockTitle”>💾 Backup / Restauración JSON</div>
+            <div class=”smallMuted” style=”margin-bottom:12px”>
+              Copia completa del estado (pacientes + visitas + intervenciones). Recomendado para migración exacta.<br>
+              Recomendación: backup semanal en ubicación corporativa autorizada.
+            </div>
+            <div class=”grid grid2”>
+              <div class=”card”>
+                <div class=”cardHeader”><div class=”cardTitle”>Exportar backup</div></div>
+                <div class=”cardBody”>
+                  <button class=”btn” id=”btnBackupJSON”>⬇ Exportar backup.json</button>
+                  <div class=”smallMuted” style=”margin-top:8px”>Incluye appName, versión y fecha de exportación.</div>
+                </div>
               </div>
-              <div class="cardBody">
-                <p class="smallMuted">
-                  Para PDF: abre la ficha del paciente y usa <b>Imprimir</b> → “Guardar como PDF”.
-                </p>
+              <div class=”card”>
+                <div class=”cardHeader”><div class=”cardTitle”>Restaurar backup</div></div>
+                <div class=”cardBody”>
+                  <label class=”btn ghost fileBtn exImportBtn”>
+                    ⬆ Importar backup.json
+                    <input type=”file” id=”fileImportJSON” accept=”application/json” />
+                  </label>
+                  <div class=”smallMuted” style=”margin-top:8px”>Valida appName y versión. Solicita confirmación antes de sobrescribir.</div>
+                </div>
               </div>
+            </div>
+          </div>
+
+          <div class=”divider”></div>
+
+          <!-- ── Bloque D: PDF ── -->
+          <div class=”card”>
+            <div class=”cardHeader”><div class=”cardTitle”>Informe PDF (por navegador)</div></div>
+            <div class=”cardBody”>
+              <p class=”smallMuted”>Para PDF: abre la ficha del paciente y usa <b>Imprimir → Guardar como PDF</b>.</p>
             </div>
           </div>
 
