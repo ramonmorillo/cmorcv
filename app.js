@@ -2505,67 +2505,116 @@ function bindPatientsUI() {
   });
 }
 
+// ---------- click dispatch table ----------
+const EXPORT_CLICK_MAP = {
+  btnExportPatientsCSV:       exportPatientsCSV,
+  btnExportVisitsCSV:         exportVisitsCSV,
+  btnExportInterventionsCSV:  exportInterventionsCSV,
+  btnExportPatientsCSVES:     exportPatientsCSVExcelES,
+  btnExportVisitsCSVES:       exportVisitsCSVExcelES,
+  btnExportInterventionsCSVES:exportInterventionsCSVExcelES,
+  btnTemplatePatients:        downloadPatientsTemplate,
+  btnTemplateVisits:          downloadVisitsTemplate,
+  btnTemplateInterventions:   downloadInterventionsTemplate,
+  btnApply_patients:          applyImportPatientsCSV,
+  btnApply_visits:            applyImportVisitsCSV,
+  btnApply_interventions:     applyImportInterventionsCSV,
+  btnCancel_patients:         () => hideImportPreview("patients"),
+  btnCancel_visits:           () => hideImportPreview("visits"),
+  btnCancel_interventions:    () => hideImportPreview("interventions"),
+  btnBackupJSON:              backupJSON,
+  btnQuickBackup:             backupJSON,
+  btnRunDebugCheck:           runDebugSelfCheck,
+};
+
+// ---------- file-change dispatch table ----------
+const IMPORT_CHANGE_MAP = {
+  fileImportPatientsCSV:      prepareImportPatientsCSV,
+  fileImportVisitsCSV:        prepareImportVisitsCSV,
+  fileImportInterventionsCSV: prepareImportInterventionsCSV,
+};
+
 function bindExportUI() {
+  // ── Primary: delegated listeners on document ──
+  // These fire regardless of DOM mutation timing or partial querySelector failures.
+  document.addEventListener("click", (e) => {
+    const id = e.target?.id || e.target?.closest("[id]")?.id;
+    const handler = EXPORT_CLICK_MAP[id];
+    if (handler) {
+      devLog("[EXPORT/IMPORT] click →", id);
+      handler();
+    }
+  });
+
+  document.addEventListener("change", (e) => {
+    const id = e.target?.id;
+    const fn = IMPORT_CHANGE_MAP[id];
+    if (fn) {
+      const f = e.target.files?.[0];
+      if (!f) return;
+      devLog("[IMPORT] file selected →", id, f.name);
+      fn(f);
+    }
+    // JSON backup restore
+    if (id === "fileImportJSON") {
+      const f = e.target.files?.[0];
+      if (!f) return;
+      devLog("[IMPORT] JSON restore →", f.name);
+      importJSON(f);
+      e.target.value = "";
+    }
+  });
+
+  // ── Fallback: also bind directly (belt + suspenders) ──
   function bind(sel, handler) {
     const el = document.querySelector(sel);
-    if (el) el.addEventListener("click", handler);
+    if (el) {
+      el.addEventListener("click", handler);
+      devLog("[EXPORT/IMPORT] direct bind OK →", sel);
+    } else {
+      devLog("[EXPORT/IMPORT] WARN: element not found →", sel);
+    }
   }
   function bindChange(sel, handler) {
     const el = document.querySelector(sel);
     if (el) el.addEventListener("change", handler);
   }
 
-  // --- CSV export (standard comma) ---
-  bind("#btnExportPatientsCSV",      exportPatientsCSV);
-  bind("#btnExportVisitsCSV",        exportVisitsCSV);
-  bind("#btnExportInterventionsCSV", exportInterventionsCSV);
+  bind("#btnExportPatientsCSV",       exportPatientsCSV);
+  bind("#btnExportVisitsCSV",         exportVisitsCSV);
+  bind("#btnExportInterventionsCSV",  exportInterventionsCSV);
+  bind("#btnExportPatientsCSVES",     exportPatientsCSVExcelES);
+  bind("#btnExportVisitsCSVES",       exportVisitsCSVExcelES);
+  bind("#btnExportInterventionsCSVES",exportInterventionsCSVExcelES);
+  bind("#btnTemplatePatients",        downloadPatientsTemplate);
+  bind("#btnTemplateVisits",          downloadVisitsTemplate);
+  bind("#btnTemplateInterventions",   downloadInterventionsTemplate);
+  bind("#btnApply_patients",          applyImportPatientsCSV);
+  bind("#btnApply_visits",            applyImportVisitsCSV);
+  bind("#btnApply_interventions",     applyImportInterventionsCSV);
+  bind("#btnCancel_patients",         () => hideImportPreview("patients"));
+  bind("#btnCancel_visits",           () => hideImportPreview("visits"));
+  bind("#btnCancel_interventions",    () => hideImportPreview("interventions"));
+  bind("#btnBackupJSON",              backupJSON);
+  bind("#btnQuickBackup",             backupJSON);
 
-  // --- CSV export (Excel ES: semicolon + BOM) ---
-  bind("#btnExportPatientsCSVES",      exportPatientsCSVExcelES);
-  bind("#btnExportVisitsCSVES",        exportVisitsCSVExcelES);
-  bind("#btnExportInterventionsCSVES", exportInterventionsCSVExcelES);
-
-  // --- CSV templates ---
-  bind("#btnTemplatePatients",      downloadPatientsTemplate);
-  bind("#btnTemplateVisits",        downloadVisitsTemplate);
-  bind("#btnTemplateInterventions", downloadInterventionsTemplate);
-
-  // --- CSV import: phase 1 (parse + preview) ---
-  const csvPrepareMap = [
-    { sel: "#fileImportPatientsCSV",      fn: prepareImportPatientsCSV },
-    { sel: "#fileImportVisitsCSV",        fn: prepareImportVisitsCSV },
-    { sel: "#fileImportInterventionsCSV", fn: prepareImportInterventionsCSV },
-  ];
-  for (const { sel, fn } of csvPrepareMap) {
-    const el = document.querySelector(sel);
-    if (!el) continue;
-    el.addEventListener("change", (ev) => {
-      const f = ev.target.files?.[0];
-      if (!f) return;
-      fn(f);
-      // keep ev.target.value so the same file can be re-selected after cancel
-    });
-  }
-
-  // --- CSV import: phase 2 (apply) ---
-  bind("#btnApply_patients",      applyImportPatientsCSV);
-  bind("#btnApply_visits",        applyImportVisitsCSV);
-  bind("#btnApply_interventions", applyImportInterventionsCSV);
-
-  // --- CSV import: cancel (hide preview) ---
-  bind("#btnCancel_patients",      () => hideImportPreview("patients"));
-  bind("#btnCancel_visits",        () => hideImportPreview("visits"));
-  bind("#btnCancel_interventions", () => hideImportPreview("interventions"));
-
-  // --- JSON backup / restore ---
-  bind("#btnBackupJSON",  backupJSON);
-  bind("#btnQuickBackup", backupJSON);
+  bindChange("#fileImportPatientsCSV", (ev) => {
+    const f = ev.target.files?.[0]; if (f) prepareImportPatientsCSV(f);
+  });
+  bindChange("#fileImportVisitsCSV", (ev) => {
+    const f = ev.target.files?.[0]; if (f) prepareImportVisitsCSV(f);
+  });
+  bindChange("#fileImportInterventionsCSV", (ev) => {
+    const f = ev.target.files?.[0]; if (f) prepareImportInterventionsCSV(f);
+  });
   bindChange("#fileImportJSON", (ev) => {
     const f = ev.target.files?.[0];
     if (!f) return;
     importJSON(f);
     ev.target.value = "";
   });
+
+  devLog("[EXPORT/IMPORT] bindExportUI() complete — version", APP_VERSION);
 }
 
 function bindVisitDetailUI() {
