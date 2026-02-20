@@ -375,41 +375,72 @@ function safeNum(x) {
   return Number.isFinite(n) ? n : null;
 }
 
+// ── Download helper ──────────────────────────────────────────────────────────
+// Safari fix: do NOT revoke the blob URL synchronously after click(); Safari
+// hasn't started the download yet at that point and the URL becomes invalid.
+// A 150 ms delay is sufficient in all tested browsers.
 function downloadText(filename, text, mime = "text/plain;charset=utf-8") {
-  const blob = new Blob([text], { type: mime });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  if (!filename) { console.error("[EXPORT] downloadText: filename is empty"); return; }
+  try {
+    const blob = new Blob([text], { type: mime });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href     = url;
+    a.download = filename;
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    // Clean up after a delay so Safari can complete the download handshake
+    setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 250);
+    devLog("[EXPORT] downloadText OK →", filename);
+  } catch (err) {
+    console.error("[EXPORT] downloadText failed:", err);
+    toast("Error al generar el archivo. Comprueba la consola.");
+  }
 }
 
-function csvEscape(value) {
+// ── Unified CSV builder ───────────────────────────────────────────────────────
+// exportCSV({ rows, filename, sep=',', bom=false })
+// sep: ',' for standard, ';' for Excel ES
+// bom: true adds UTF-8 BOM (required for Excel ES on Windows)
+function csvEscapeField(value, sep) {
   const s = value === null || value === undefined ? "" : String(value);
-  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  // Quote if field contains sep, double-quote, CR or LF
+  const needsQuote = s.includes(sep) || s.includes('"') || s.includes("\n") || s.includes("\r");
+  if (needsQuote) return `"${s.replace(/"/g, '""')}"`;
   return s;
 }
 
-// Default export: comma separator, no BOM (compatible with all tools)
-function toCSV(rows, headers) {
-  const lines = [headers.map(csvEscape).join(",")];
-  for (const r of rows) lines.push(headers.map((h) => csvEscape(r[h] ?? "")).join(","));
+function buildCSVText(rows, headers, sep) {
+  const esc  = (v) => csvEscapeField(v, sep);
+  const lines = [headers.map(esc).join(sep)];
+  for (const r of rows) lines.push(headers.map((h) => esc(r[h] ?? "")).join(sep));
   return lines.join("\r\n");
 }
 
-// Excel España export: semicolon separator, UTF-8 BOM
-function csvEscapeSemi(value) {
-  const s = value === null || value === undefined ? "" : String(value);
-  if (/[;",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-  return s;
+function exportCSV({ rows, filename, sep = ",", bom = false }) {
+  if (!rows || !rows.length) {
+    console.warn("[EXPORT] exportCSV: no rows to export →", filename);
+    toast("No hay datos para exportar.");
+    return;
+  }
+  if (!filename) { console.error("[EXPORT] exportCSV: filename is empty"); return; }
+  const headers = Object.keys(rows[0]);
+  const text    = (bom ? "\uFEFF" : "") + buildCSVText(rows, headers, sep);
+  const mime    = "text/csv;charset=utf-8";
+  devLog("[EXPORT] exportCSV →", filename, "rows:", rows.length, "sep:", JSON.stringify(sep), "bom:", bom);
+  downloadText(filename, text, mime);
+}
+
+// Keep legacy helpers used internally by schema-based exports
+function csvEscape(value) {
+  return csvEscapeField(value, ",");
+}
+function toCSV(rows, headers) {
+  return buildCSVText(rows, headers, ",");
 }
 function toCSVExcelES(rows, headers) {
-  const lines = [headers.map(csvEscapeSemi).join(";")];
-  for (const r of rows) lines.push(headers.map((h) => csvEscapeSemi(r[h] ?? "")).join(";"));
-  return "\uFEFF" + lines.join("\r\n"); // UTF-8 BOM + CRLF
+  return "\uFEFF" + buildCSVText(rows, headers, ";");
 }
 
 // Normalize various date formats → YYYY-MM-DD. Returns null if unparseable.
@@ -2084,22 +2115,22 @@ function interventionsForCSV() {
 
 async function exportPatientsCSV() {
   const rows = patientsForCSV();
-  const headers = Object.keys(rows[0] || {});
-  downloadText("patients.csv", toCSV(rows, headers), "text/csv;charset=utf-8");
-  toast("patients.csv exportado.");
+  if (!rows.length) return toast("No hay pacientes para exportar.");
+  exportCSV({ rows, filename: "patients.csv", sep: ",", bom: false });
+  toast(`patients.csv exportado (${rows.length} filas).`);
 }
 
 async function exportVisitsCSV() {
   const rows = visitsForCSV();
-  const headers = Object.keys(rows[0] || {});
-  downloadText("visits.csv", toCSV(rows, headers), "text/csv;charset=utf-8");
-  toast("visits.csv exportado.");
+  if (!rows.length) return toast("No hay visitas para exportar.");
+  exportCSV({ rows, filename: "visits.csv", sep: ",", bom: false });
+  toast(`visits.csv exportado (${rows.length} filas).`);
 }
 
 async function exportInterventionsCSV() {
   const rows = interventionsForCSV();
-  const headers = Object.keys(rows[0] || {});
-  downloadText("interventions.csv", toCSV(rows, headers), "text/csv;charset=utf-8");
+  if (!rows.length) return toast("No hay intervenciones para exportar.");
+  exportCSV({ rows, filename: "interventions.csv", sep: ",", bom: false });
   toast(`interventions.csv exportado (${rows.length} filas).`);
 }
 
@@ -2394,24 +2425,21 @@ async function applyImportInterventionsCSV() {
 async function exportPatientsCSVExcelES() {
   const rows = patientsForCSV();
   if (!rows.length) return toast("No hay pacientes para exportar.");
-  const headers = CSV_SCHEMA.patients.map((f) => f.key);
-  downloadText("patients_excelES.csv", toCSVExcelES(rows, headers), "text/csv;charset=utf-8");
+  exportCSV({ rows, filename: "patients_excelES.csv", sep: ";", bom: true });
   toast(`patients_excelES.csv exportado (${rows.length} filas).`);
 }
 
 async function exportVisitsCSVExcelES() {
   const rows = visitsForCSV();
   if (!rows.length) return toast("No hay visitas para exportar.");
-  const headers = CSV_SCHEMA.visits.map((f) => f.key);
-  downloadText("visits_excelES.csv", toCSVExcelES(rows, headers), "text/csv;charset=utf-8");
+  exportCSV({ rows, filename: "visits_excelES.csv", sep: ";", bom: true });
   toast(`visits_excelES.csv exportado (${rows.length} filas).`);
 }
 
 async function exportInterventionsCSVExcelES() {
   const rows = interventionsForCSV();
   if (!rows.length) return toast("No hay intervenciones para exportar.");
-  const headers = CSV_SCHEMA.interventions.map((f) => f.key);
-  downloadText("interventions_excelES.csv", toCSVExcelES(rows, headers), "text/csv;charset=utf-8");
+  exportCSV({ rows, filename: "interventions_excelES.csv", sep: ";", bom: true });
   toast(`interventions_excelES.csv exportado (${rows.length} filas).`);
 }
 
