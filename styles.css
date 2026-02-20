@@ -606,6 +606,47 @@ label{font-size:12px; color: var(--muted); font-weight:800}
   justify-content: center;
 }
 
+/* ── Import preview panel ── */
+.impPreview {
+  margin-top: 10px;
+  font-size: 12px;
+}
+.impStatRow {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.impStat {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  background: rgba(0,0,0,.07);
+  color: var(--text);
+}
+.impStat--ok  { background: rgba(46,213,115,.18); color: #1a7a40; }
+.impStat--upd { background: rgba(30,136,229,.15); color: #1254a1; }
+.impStat--err { background: rgba(220,53,69,.15);  color: #9a1726; }
+.impErrorTitle {
+  font-weight: 700;
+  color: #9a1726;
+  margin: 6px 0 4px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.impErrorRow {
+  padding: 2px 0;
+  color: #9a1726;
+  font-size: 11px;
+  font-family: var(--mono);
+  border-bottom: 1px solid rgba(220,53,69,.12);
+}
+
 @media (max-width: 1100px){
   .sidebar{display:none}
   .authBtnMobile{display:flex}

@@ -398,15 +398,16 @@
           <div class=”panelHeader”>
             <div>
               <div class=”panelTitle”>Exportación e Importación</div>
-              <div class=”smallMuted”>CSV para Excel/investigación (sep. <b>;</b>, UTF-8 BOM) · Backup JSON para restauración exacta.</div>
+              <div class=”smallMuted”>CSV estándar (sep. <b>,</b>) o Excel ES (sep. <b>;</b> + BOM) · Backup JSON para restauración exacta.</div>
             </div>
           </div>
 
           <!-- ── Bloque A: Exportar CSV ── -->
           <div class=”exBlock”>
-            <div class=”exBlockTitle”>⬇ Exportar CSV (Excel España)</div>
+            <div class=”exBlockTitle”>⬇ Exportar CSV</div>
             <div class=”smallMuted” style=”margin-bottom:12px”>
-              Separador: <code class=”inlineCode”>;</code> · Codificación: UTF-8 con BOM · Abre directamente en Excel sin configuración adicional.
+              <b>Estándar</b>: sep. <code class=”inlineCode”>,</code> · UTF-8 · CRLF — compatible con R, Python, Google Sheets.
+              &nbsp;|&nbsp; <b>Excel ES</b>: sep. <code class=”inlineCode”>;</code> · UTF-8 BOM · para Excel en español sin configuración.
             </div>
             <div class=”grid grid3”>
               <div class=”card”>
@@ -417,6 +418,7 @@
                   </div>
                   <div class=”btnRow”>
                     <button class=”btn” id=”btnExportPatientsCSV”>⬇ patients.csv</button>
+                    <button class=”btn ghost” id=”btnExportPatientsCSVES”>⬇ Excel ES</button>
                     <button class=”btn ghost” id=”btnTemplatePatients”>📄 Plantilla</button>
                   </div>
                 </div>
@@ -429,6 +431,7 @@
                   </div>
                   <div class=”btnRow”>
                     <button class=”btn” id=”btnExportVisitsCSV”>⬇ visits.csv</button>
+                    <button class=”btn ghost” id=”btnExportVisitsCSVES”>⬇ Excel ES</button>
                     <button class=”btn ghost” id=”btnTemplateVisits”>📄 Plantilla</button>
                   </div>
                 </div>
@@ -441,6 +444,7 @@
                   </div>
                   <div class=”btnRow”>
                     <button class=”btn” id=”btnExportInterventionsCSV”>⬇ interventions.csv</button>
+                    <button class=”btn ghost” id=”btnExportInterventionsCSVES”>⬇ Excel ES</button>
                     <button class=”btn ghost” id=”btnTemplateInterventions”>📄 Plantilla</button>
                   </div>
                 </div>
@@ -454,8 +458,8 @@
           <div class=”exBlock”>
             <div class=”exBlockTitle”>⬆ Importar desde CSV</div>
             <div class=”smallMuted” style=”margin-bottom:12px”>
-              Valida todo antes de guardar (transaccional). Acepta separador <b>;</b> o <b>,</b> y BOM.
-              Los registros con ID existente se <b>sobrescriben</b>. Para restauración completa usa el Backup JSON.
+              Acepta sep. <b>,</b> (estándar) o <b>;</b> (Excel ES) — detección automática. Valida antes de guardar.
+              Los registros con ID existente se <b>actualizan</b>. Para restauración completa usa el Backup JSON.
             </div>
             <div class=”grid grid3”>
               <div class=”card”>
@@ -465,9 +469,18 @@
                     Obligatorio: <code class=”inlineCode”>patientId</code>, <code class=”inlineCode”>prevalentCondition</code>
                   </div>
                   <label class=”btn ghost fileBtn exImportBtn”>
-                    ⬆ Importar patients.csv
+                    ⬆ Seleccionar patients.csv
                     <input type=”file” id=”fileImportPatientsCSV” accept=”.csv,text/csv” />
                   </label>
+                  <div class=”impPreview hidden” id=”impPreview_patients”>
+                    <div class=”divider” style=”margin:10px 0”></div>
+                    <div id=”impStats_patients”></div>
+                    <div class=”hidden” id=”impErrors_patients”></div>
+                    <div class=”btnRow” style=”margin-top:10px”>
+                      <button class=”btn” id=”btnApply_patients” disabled>Aplicar</button>
+                      <button class=”btn ghost” id=”btnCancel_patients”>Cancelar</button>
+                    </div>
+                  </div>
                 </div>
               </div>
               <div class=”card”>
@@ -477,9 +490,18 @@
                     Obligatorio: <code class=”inlineCode”>visitId</code>, <code class=”inlineCode”>patientId</code>, <code class=”inlineCode”>date</code>
                   </div>
                   <label class=”btn ghost fileBtn exImportBtn”>
-                    ⬆ Importar visits.csv
+                    ⬆ Seleccionar visits.csv
                     <input type=”file” id=”fileImportVisitsCSV” accept=”.csv,text/csv” />
                   </label>
+                  <div class=”impPreview hidden” id=”impPreview_visits”>
+                    <div class=”divider” style=”margin:10px 0”></div>
+                    <div id=”impStats_visits”></div>
+                    <div class=”hidden” id=”impErrors_visits”></div>
+                    <div class=”btnRow” style=”margin-top:10px”>
+                      <button class=”btn” id=”btnApply_visits” disabled>Aplicar</button>
+                      <button class=”btn ghost” id=”btnCancel_visits”>Cancelar</button>
+                    </div>
+                  </div>
                 </div>
               </div>
               <div class=”card”>
@@ -489,9 +511,18 @@
                     Obligatorio: <code class=”inlineCode”>interventionId</code>, <code class=”inlineCode”>patientId</code>, <code class=”inlineCode”>visitId</code>, <code class=”inlineCode”>cmoDimension</code>, <code class=”inlineCode”>description</code>, <code class=”inlineCode”>status</code>
                   </div>
                   <label class=”btn ghost fileBtn exImportBtn”>
-                    ⬆ Importar interventions.csv
+                    ⬆ Seleccionar interventions.csv
                     <input type=”file” id=”fileImportInterventionsCSV” accept=”.csv,text/csv” />
                   </label>
+                  <div class=”impPreview hidden” id=”impPreview_interventions”>
+                    <div class=”divider” style=”margin:10px 0”></div>
+                    <div id=”impStats_interventions”></div>
+                    <div class=”hidden” id=”impErrors_interventions”></div>
+                    <div class=”btnRow” style=”margin-top:10px”>
+                      <button class=”btn” id=”btnApply_interventions” disabled>Aplicar</button>
+                      <button class=”btn ghost” id=”btnCancel_interventions”>Cancelar</button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
