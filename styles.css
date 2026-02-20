@@ -647,6 +647,20 @@ label{font-size:12px; color: var(--muted); font-weight:800}
   border-bottom: 1px solid rgba(220,53,69,.12);
 }
 
+/* ── Build badge (always visible in sidebar footer) ── */
+.buildBadge {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: rgba(30,136,229,.15);
+  color: var(--accent, #1e88e5);
+  font-size: 10px;
+  font-weight: 700;
+  font-family: var(--mono, monospace);
+  letter-spacing: .03em;
+}
+
 /* ── Debug panel (visible only with ?debug=1) ── */
 .debugPanel .panelHeader { border-bottom: 1px solid rgba(30,136,229,.25); }
 .debugPanel #debugOutput { color: var(--text); }

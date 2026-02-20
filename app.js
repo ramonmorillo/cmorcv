@@ -11,12 +11,24 @@
    - Modern UI + LDL chart (canvas) no external libs
 */
 
-const APP_VERSION = "20260220_1900";
+const BUILD_ID    = "2026-02-20_2015";
+const APP_VERSION = BUILD_ID;          // backward-compat alias
+
+// Log immediately so DevTools Network tab and Console confirm which build loaded
+console.info("[BUILD]", BUILD_ID);
+
 const IS_DEV = typeof window !== "undefined" &&
   (location.hostname === "localhost" || location.hostname === "127.0.0.1" ||
    new URLSearchParams(location.search).has("debug"));
 
 function devLog(...args) { if (IS_DEV) console.log("[CMO]", ...args); }
+
+// Stamp the build badge as soon as the script is parsed
+// (script is at end of <body>, so DOM is already ready)
+(function stampBuildBadge() {
+  const el = document.getElementById("buildBadge");
+  if (el) el.textContent = "Build: " + BUILD_ID;
+})();
 
 const APP = {
   schemaVersion: "CMO-REGISTRY-1.2",
@@ -2693,7 +2705,7 @@ function runDebugSelfCheck() {
   const hdr = (msg) => lines.push("\n── " + msg + " ──");
 
   hdr("Versión");
-  ok("APP_VERSION = " + APP_VERSION);
+  ok("BUILD_ID = " + BUILD_ID);
   ok("JS cargado y ejecutado correctamente");
 
   hdr("Elementos del DOM (botones exportar)");
