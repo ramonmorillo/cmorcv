@@ -1,0 +1,4 @@
+patientId;prevalentCondition;sex;birthYear;comorbidities;notes;status;createdAt;schemaVersion
+PCSK9-000001;PCSK9 / Dislipemia;M;1968;DM2; ERC G3;Paciente con evolocumab desde 2024. Adherencia buena.;active;2026-01-10T09:00:00.000Z;CMO-REGISTRY-1.2
+PCSK9-000002;Cardiopatía isquémica;F;1975;HTA; dislipemia mixta;IAM previo 2022. LDL objetivo <55.;active;2026-01-15T10:30:00.000Z;CMO-REGISTRY-1.2
+PCSK9-000003;Insuficiencia cardiaca;M;1952;FEVI 35%; FA; ERC G4;;inactive;2026-02-01T08:00:00.000Z;CMO-REGISTRY-1.2

@@ -647,6 +647,10 @@ label{font-size:12px; color: var(--muted); font-weight:800}
   border-bottom: 1px solid rgba(220,53,69,.12);
 }
 
+/* ── Debug panel (visible only with ?debug=1) ── */
+.debugPanel .panelHeader { border-bottom: 1px solid rgba(30,136,229,.25); }
+.debugPanel #debugOutput { color: var(--text); }
+
 @media (max-width: 1100px){
   .sidebar{display:none}
   .grid{grid-template-columns:1fr}

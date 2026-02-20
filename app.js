@@ -2681,6 +2681,114 @@ function bindVisitDetailUI() {
   $("#btnDeleteVisit").addEventListener("click", deleteSelectedVisit);
 }
 
+// ---------------- Debug self-check ----------------
+
+function runDebugSelfCheck() {
+  const out = document.getElementById("debugOutput");
+  if (!out) return;
+
+  const lines = [];
+  const ok  = (msg) => lines.push("  ✔ " + msg);
+  const err = (msg) => lines.push("  ✘ " + msg);
+  const hdr = (msg) => lines.push("\n── " + msg + " ──");
+
+  hdr("Versión");
+  ok("APP_VERSION = " + APP_VERSION);
+  ok("JS cargado y ejecutado correctamente");
+
+  hdr("Elementos del DOM (botones exportar)");
+  const exportBtns = [
+    "btnExportPatientsCSV","btnExportVisitsCSV","btnExportInterventionsCSV",
+    "btnExportPatientsCSVES","btnExportVisitsCSVES","btnExportInterventionsCSVES",
+    "btnTemplatePatients","btnTemplateVisits","btnTemplateInterventions",
+  ];
+  exportBtns.forEach((id) => {
+    if (document.getElementById(id)) ok(id + " encontrado");
+    else err(id + " NO encontrado en DOM");
+  });
+
+  hdr("Elementos del DOM (importar)");
+  const importEls = [
+    "fileImportPatientsCSV","fileImportVisitsCSV","fileImportInterventionsCSV",
+    "btnApply_patients","btnApply_visits","btnApply_interventions",
+  ];
+  importEls.forEach((id) => {
+    if (document.getElementById(id)) ok(id + " encontrado");
+    else err(id + " NO encontrado en DOM");
+  });
+
+  hdr("Listeners delegados (document)");
+  ok("click  delegado activo (dispatch table: " + Object.keys(EXPORT_CLICK_MAP).length + " entradas)");
+  ok("change delegado activo (dispatch table: " + Object.keys(IMPORT_CHANGE_MAP).length + " entradas)");
+
+  hdr("Test rápido: construcción CSV");
+  try {
+    const dummyRows = [{ id: "T-001", nombre: 'Con "comillas"', sep: "a;b", val: 42 }];
+    const csv = buildCSVText(dummyRows, Object.keys(dummyRows[0]), ",");
+    const lines2 = csv.split("\r\n");
+    if (lines2.length === 2 && lines2[0] === "id,nombre,sep,val") {
+      ok("toCSV estándar → cabecera OK");
+    } else {
+      err("toCSV estándar → resultado inesperado: " + JSON.stringify(csv));
+    }
+    const csvES = buildCSVText(dummyRows, Object.keys(dummyRows[0]), ";");
+    if (csvES.includes(";")) ok("toCSVExcelES (sep=;) → OK");
+    else err("toCSVExcelES → separador incorrecto");
+  } catch (e) {
+    err("excepción en build CSV: " + e.message);
+  }
+
+  hdr("Test rápido: parseo CSV");
+  try {
+    const csvSample = "patientId;prevalentCondition;sex\r\nP-001;PCSK9 / Dislipemia;M\r\nP-002;Diabetes;F\r\n";
+    const { headers, records, sep } = parseCSV(csvSample);
+    if (sep === ";" && headers.length === 3 && records.length === 2) {
+      ok("parseCSV (sep=;) → " + records.length + " filas, " + headers.length + " cols");
+    } else {
+      err("parseCSV → resultado inesperado sep=" + sep + " rows=" + records.length);
+    }
+    const csvComma = "id,name\n1,\"Doe, John\"\n";
+    const r2 = parseCSV(csvComma);
+    if (r2.sep === "," && r2.records[0].name === "Doe, John") {
+      ok("parseCSV (sep=,, quoted) → campo con coma OK");
+    } else {
+      err("parseCSV quoted → " + JSON.stringify(r2.records));
+    }
+  } catch (e) {
+    err("excepción en parseCSV: " + e.message);
+  }
+
+  hdr("Blob + URL.createObjectURL (prerequisito descarga)");
+  try {
+    const b   = new Blob(["test"], { type: "text/plain" });
+    const url = URL.createObjectURL(b);
+    if (url && url.startsWith("blob:")) {
+      ok("Blob + createObjectURL OK → " + url.slice(0, 40) + "…");
+    } else {
+      err("createObjectURL devolvió URL inesperada: " + url);
+    }
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    err("Blob/createObjectURL no soportado: " + e.message);
+  }
+
+  hdr("Estado de datos");
+  ok("Pacientes en memoria: " + APP.state.patients.length);
+  ok("Visitas en memoria: " + APP.state.visits.length);
+  ok("Intervenciones en memoria: " + APP.state.interventions.length);
+
+  out.textContent = lines.join("\n");
+}
+
+function initDebugPanel() {
+  if (!IS_DEV) return;
+  const panel = document.getElementById("debugPanel");
+  if (panel) {
+    panel.classList.remove("hidden");
+    devLog("[DEBUG] panel activado (IS_DEV=true)");
+  }
+}
+
 // ---------------- Init ----------------
 
 async function init() {
@@ -2697,9 +2805,11 @@ async function init() {
   bindPatientsUI();
   bindExportUI();
   bindVisitDetailUI();
+  initDebugPanel();
 
   setView("patientsView");
   toast("Listo. Datos en local (IndexedDB).");
+  devLog("[INIT] app lista, versión", APP_VERSION);
 }
 
 init().catch((e) => {
