@@ -375,6 +375,19 @@ function safeNum(x) {
   return Number.isFinite(n) ? n : null;
 }
 
+// ── File-read helper (Safari < 14 compat) ────────────────────────────────────
+// file.text() is only available from Safari 14+. For older Safari we fall
+// back to FileReader which is universally supported.
+function readFileAsText(file) {
+  if (typeof file.text === "function") return file.text();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload  = (e) => resolve(e.target.result);
+    reader.onerror = ()  => reject(new Error("FileReader error"));
+    reader.readAsText(file, "utf-8");
+  });
+}
+
 // ── Download helper ──────────────────────────────────────────────────────────
 // Safari fix: do NOT revoke the blob URL synchronously after click(); Safari
 // hasn't started the download yet at that point and the URL becomes invalid.
@@ -2302,7 +2315,13 @@ function _parseCsvAndPreview(entity, rawText, schema, buildRow, knownPatientIds,
 // --- Prepare functions (parse → validate → store pending → show preview) ---
 
 async function prepareImportPatientsCSV(file) {
-  let rawText; try { rawText = await file.text(); } catch { return toast("Error leyendo archivo."); }
+  devLog("[IMPORT] prepareImportPatientsCSV →", file.name, file.size, "bytes");
+  let rawText;
+  try { rawText = await readFileAsText(file); }
+  catch (err) {
+    console.error("[IMPORT] Error leyendo archivo patients:", err);
+    return toast("Error leyendo archivo. Comprueba la consola.");
+  }
   const buildRow = (rec) => ({
     patientId:          rec.patientId,
     prevalentCondition: rec.prevalentCondition || "",
@@ -2319,7 +2338,13 @@ async function prepareImportPatientsCSV(file) {
 }
 
 async function prepareImportVisitsCSV(file) {
-  let rawText; try { rawText = await file.text(); } catch { return toast("Error leyendo archivo."); }
+  devLog("[IMPORT] prepareImportVisitsCSV →", file.name, file.size, "bytes");
+  let rawText;
+  try { rawText = await readFileAsText(file); }
+  catch (err) {
+    console.error("[IMPORT] Error leyendo archivo visits:", err);
+    return toast("Error leyendo archivo. Comprueba la consola.");
+  }
   // Known patient IDs: existing DB + any pending patients batch
   const knownPatIds = new Set([
     ...APP.state.patients.map((p) => p.patientId),
@@ -2355,7 +2380,13 @@ async function prepareImportVisitsCSV(file) {
 }
 
 async function prepareImportInterventionsCSV(file) {
-  let rawText; try { rawText = await file.text(); } catch { return toast("Error leyendo archivo."); }
+  devLog("[IMPORT] prepareImportInterventionsCSV →", file.name, file.size, "bytes");
+  let rawText;
+  try { rawText = await readFileAsText(file); }
+  catch (err) {
+    console.error("[IMPORT] Error leyendo archivo interventions:", err);
+    return toast("Error leyendo archivo. Comprueba la consola.");
+  }
   const knownPatIds = new Set([
     ...APP.state.patients.map((p) => p.patientId),
     ...(APP.state.csvPending.patients || []).map((p) => p.patientId),
@@ -2459,8 +2490,9 @@ async function backupJSON() {
 }
 
 async function importJSON(file) {
+  devLog("[IMPORT] importJSON →", file.name, file.size, "bytes");
   try {
-    const text = await file.text();
+    const text = await readFileAsText(file);
     const payload = JSON.parse(text);
 
     if (!payload || !payload.patients || !payload.visits || !payload.interventions) {
