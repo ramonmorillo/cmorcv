@@ -553,16 +553,16 @@
       <section id="aboutView" class="view hidden">
         <div class="panel">
           <div class="panelHeader">
-            <div class="panelTitle">Ayuda rapida</div>
+            <div class="panelTitle">Ayuda rápida</div>
           </div>
           <div class="card">
             <div class="cardBody">
               <ul class="bullets">
-                <li><b>Local-first:</b> los datos se guardan en este navegador (IndexedDB).</li>
-                <li><b>RGPD:</b> usa <b>ID pseudonimizado</b>. No guardes nombre/NIH/telefono.</li>
-                <li><b>Backup:</b> usa "Backup JSON" de forma periodica.</li>
-                <li><b>Investigacion:</b> exporta CSV (patients/visits/interventions).</li>
-                <li><b>Estratificacion:</b> variables por visita, precarga en sucesivas, score y nivel calculados con cortes fijos.</li>
+                <li><b>Local-first:</b> los datos se almacenan únicamente en el navegador (IndexedDB); ningún dato sale del dispositivo.</li>
+                <li><b>RGPD:</b> utiliza exclusivamente <b>identificadores pseudonimizados</b>. No introduzcas nombre, NHC, teléfono ni ningún otro dato personal identificativo.</li>
+                <li><b>Copia de seguridad:</b> realiza exportaciones periódicas mediante «Backup JSON» para evitar pérdidas ante cambios de navegador o dispositivo.</li>
+                <li><b>Exportación:</b> genera CSV de pacientes, visitas e intervenciones para análisis externos o investigación.</li>
+                <li><b>Estratificación:</b> las variables se registran por visita y se precargan en visitas sucesivas; la puntuación y el nivel de riesgo se calculan con cortes fijos predefinidos.</li>
               </ul>
             </div>
           </div>
@@ -574,8 +574,11 @@
           </div>
           <div class="card">
             <div class="cardBody">
-              <p style="margin:0 0 8px;font-weight:800;font-size:15px">Herramienta de seguimiento CMO para Riesgo Cardiovascular (RCV)</p>
-              <p style="margin:0 0 6px;color:var(--muted);font-size:13px">Creado por <b style="color:var(--text)">Ramon Morillo</b> — Febrero 2026</p>
+              <p style="margin:0 0 8px;font-weight:800;font-size:15px">CMO-RCV — Herramienta de seguimiento CMO para Riesgo Cardiovascular</p>
+              <p style="margin:0 0 4px;color:var(--muted);font-size:13px"><b style="color:var(--text)">Tipo de obra:</b> Programa de ordenador (aplicación web)</p>
+              <p style="margin:0 0 4px;color:var(--muted);font-size:13px"><b style="color:var(--text)">Versión:</b> v1.0</p>
+              <p style="margin:0 0 4px;color:var(--muted);font-size:13px"><b style="color:var(--text)">Autor:</b> Ramón Morillo</p>
+              <p style="margin:0;color:var(--muted);font-size:13px"><b style="color:var(--text)">Fecha de creación:</b> Febrero 2026</p>
             </div>
           </div>
         </div>
@@ -586,12 +589,12 @@
           </div>
           <div class="card">
             <div class="cardBody" style="font-size:12px;line-height:1.55;color:var(--muted)">
-              <p style="margin:0 0 10px"><b style="color:var(--text)">1. Finalidad.</b> Esta herramienta ha sido disenada exclusivamente como apoyo al seguimiento farmacoterapeutico en consultas de atencion farmaceutica hospitalaria. No constituye un producto sanitario ni un sistema de informacion clinica oficial. Su uso es complementario y no sustituye al juicio clinico profesional ni a los sistemas de historia clinica electronica del centro.</p>
-              <p style="margin:0 0 10px"><b style="color:var(--text)">2. Proteccion de datos y RGPD.</b> La herramienta funciona integramente en el navegador del usuario (arquitectura local-first). No se transmiten datos a servidores externos. El usuario es responsable de utilizar unicamente identificadores pseudonimizados y de no almacenar datos de caracter personal (nombre, NHC, telefono, etc.) conforme al Reglamento (UE) 2016/679 (RGPD) y la Ley Organica 3/2018 (LOPDGDD). El responsable del tratamiento de los datos sera, en todo caso, la institucion sanitaria correspondiente.</p>
-              <p style="margin:0 0 10px"><b style="color:var(--text)">3. Sin garantia.</b> La herramienta se proporciona "tal cual" (AS IS), sin garantias de ningun tipo, expresas o implicitas. El autor no se responsabiliza de errores en los calculos de estratificacion, perdida de datos por fallo del navegador o del dispositivo, ni de decisiones clinicas basadas en la informacion mostrada.</p>
-              <p style="margin:0 0 10px"><b style="color:var(--text)">4. Responsabilidad del usuario.</b> El usuario profesional sanitario es el unico responsable de: (a) verificar la exactitud de los datos introducidos; (b) realizar copias de seguridad periodicas; (c) cumplir la normativa de proteccion de datos de su institucion; (d) validar las recomendaciones y estratificaciones con las guias clinicas vigentes.</p>
-              <p style="margin:0 0 10px"><b style="color:var(--text)">5. Propiedad intelectual.</b> Todos los derechos sobre el diseno, codigo y contenido de esta herramienta pertenecen al autor. Se permite su uso con fines asistenciales y de investigacion dentro del marco institucional. Queda prohibida su reproduccion, distribucion o modificacion sin autorizacion expresa del autor.</p>
-              <p style="margin:0"><b style="color:var(--text)">6. Limitacion de responsabilidad.</b> En ningun caso el autor sera responsable de danos directos, indirectos, incidentales o consecuentes derivados del uso o la imposibilidad de uso de esta herramienta, incluyendo pero no limitado a la perdida de datos, interrupcion de la actividad asistencial o decisiones clinicas inadecuadas.</p>
+              <p style="margin:0 0 10px"><b style="color:var(--text)">1. Finalidad.</b> CMO-RCV ha sido diseñada como apoyo al seguimiento farmacoterapéutico en consultas de atención farmacéutica hospitalaria. Su uso se permite con fines asistenciales, docentes y de investigación dentro del marco institucional correspondiente. La herramienta no sustituye el juicio clínico del profesional ni los sistemas de historia clínica electrónica del centro, y no debe utilizarse como único fundamento de decisiones terapéuticas.</p>
+              <p style="margin:0 0 10px"><b style="color:var(--text)">2. Marco regulatorio.</b> Esta herramienta no está concebida como producto sanitario en el sentido del Reglamento (UE) 2017/745 sobre productos sanitarios (MDR); su uso no requiere marcado CE ni registro como dispositivo médico. En todo caso, el usuario deberá observar la normativa aplicable a su actividad profesional e institucional. En materia de protección de datos, resultan de aplicación el Reglamento (UE) 2016/679 (RGPD) y la Ley Orgánica 3/2018 (LOPDGDD).</p>
+              <p style="margin:0 0 10px"><b style="color:var(--text)">3. Protección de datos.</b> La herramienta funciona íntegramente en el navegador del usuario (arquitectura local-first); ningún dato se transmite a servidores externos ni es accesible por el autor. El usuario debe emplear únicamente identificadores pseudonimizados y abstenerse de introducir datos personales identificativos (nombre, NHC, teléfono, etc.). El responsable del tratamiento será, según corresponda, la institución sanitaria o el propio profesional usuario, en los términos establecidos por el RGPD y la LOPDGDD.</p>
+              <p style="margin:0 0 10px"><b style="color:var(--text)">4. Uso y responsabilidades del usuario.</b> El profesional sanitario usuario es el único responsable de: (a) verificar la exactitud e integridad de los datos introducidos; (b) realizar copias de seguridad periódicas; (c) cumplir la normativa de protección de datos y los procedimientos de seguridad de su institución; (d) contrastar las estratificaciones y recomendaciones generadas con las guías clínicas vigentes en cada momento.</p>
+              <p style="margin:0 0 10px"><b style="color:var(--text)">5. Propiedad intelectual.</b> El diseño, el código fuente y los contenidos de CMO-RCV son obra del autor (Ramón Morillo, Febrero 2026) y están protegidos por la legislación española e internacional sobre propiedad intelectual. Se autoriza su uso con fines asistenciales, docentes y de investigación dentro del marco institucional. Queda prohibida, fuera de dicho marco y sin autorización expresa y escrita del autor, toda reproducción, distribución, modificación o comunicación pública de la herramienta o de cualquiera de sus componentes.</p>
+              <p style="margin:0"><b style="color:var(--text)">6. Ausencia de garantías y limitación de responsabilidad.</b> La herramienta se proporciona «tal cual» (<i>AS IS</i>), sin garantías de ningún tipo, expresas o implícitas, salvo en los casos legalmente previstos. El autor no será responsable de daños directos, indirectos, incidentales o consecuentes derivados del uso o de la imposibilidad de uso de la herramienta, incluidos, entre otros, la pérdida de datos, la interrupción de la actividad asistencial o las decisiones clínicas inadecuadas, salvo en los casos legalmente previstos.</p>
             </div>
           </div>
         </div>
