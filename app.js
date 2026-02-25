@@ -11,7 +11,7 @@
    - Modern UI + LDL chart (canvas) no external libs
 */
 
-const APP_VERSION = "20260220_1900";
+const APP_VERSION = "20260225_1000";
 const IS_DEV = typeof window !== "undefined" &&
   (location.hostname === "localhost" || location.hostname === "127.0.0.1" ||
    new URLSearchParams(location.search).has("debug"));
