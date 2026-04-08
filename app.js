@@ -2816,3 +2816,14 @@ init().catch((e) => {
   console.error(e);
   alert("Error inicializando la app. Mira la consola del navegador.");
 });
+
+
+async function testSupabase() {
+  const { data, error } = await window.supabase
+    .from('patients')
+    .select('*')
+
+  console.log('SUPABASE TEST:', data, error)
+}
+
+testSupabase()
