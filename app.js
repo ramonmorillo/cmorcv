@@ -2527,16 +2527,21 @@ async function importJSON(file) {
 // ---------------- Bindings ----------------
 
 async function loadAll() {
-  // SUPABASE PATIENT LOAD
-  const { data, error } = await window.supabase
-    .from('patients')
-    .select('*')
-    .order('created_at', { ascending: false });
-  if (error) {
-    console.error(error);
+  // FIXED SUPABASE LOADALL
+  if (!window.supabase) {
+    console.warn("Supabase client not ready in loadAll().");
     APP.state.patients = [];
   } else {
-    APP.state.patients = data || [];
+    const { data, error } = await window.supabase
+      .from('patients')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (error) {
+      console.error(error);
+      APP.state.patients = [];
+    } else {
+      APP.state.patients = data || [];
+    }
   }
   APP.state.visits = await dbGetAll(APP.stores.visits);
   APP.state.interventions = await dbGetAll(APP.stores.interventions);
