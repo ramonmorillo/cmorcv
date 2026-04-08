@@ -2840,6 +2840,11 @@ init().catch((e) => {
 
 // FIXED INIT TIMING WITH SUPABASE
 window.addEventListener('supabaseReady', async () => {
+  if (!window.supabase) {
+    // removed premature loadAll call
+    return
+  }
+
   try {
     await loadAll()
     renderPatientsTable()
