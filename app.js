@@ -1670,8 +1670,16 @@ async function savePatient() {
   const exists = APP.state.patients.some((x) => x.patientId === patientId);
   if (exists) return toast("Ese ID ya existe.");
 
-  await dbPut(APP.stores.patients, p);
-  APP.state.patients.push(p);
+  // SUPABASE PATIENT SAVE
+  const { data, error } = await window.supabase
+    .from('patients')
+    .insert([p])
+    .select();
+  if (error) {
+    console.error(error);
+    return alert("Error guardando paciente en Supabase.");
+  }
+  APP.state.patients.push((data && data[0]) || p);
 
   fillConditionSelectors();
   updateStats();
@@ -2519,7 +2527,17 @@ async function importJSON(file) {
 // ---------------- Bindings ----------------
 
 async function loadAll() {
-  APP.state.patients = await dbGetAll(APP.stores.patients);
+  // SUPABASE PATIENT LOAD
+  const { data, error } = await window.supabase
+    .from('patients')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error) {
+    console.error(error);
+    APP.state.patients = [];
+  } else {
+    APP.state.patients = data || [];
+  }
   APP.state.visits = await dbGetAll(APP.stores.visits);
   APP.state.interventions = await dbGetAll(APP.stores.interventions);
 }
