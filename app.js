@@ -2816,8 +2816,6 @@ function initDebugPanel() {
 
 async function init() {
   APP.state.db = await openDB();
-  await loadAll();
-
   fillConditionSelectors();
   fillHospitalDrugs();
   updateStats();
@@ -2839,6 +2837,16 @@ init().catch((e) => {
   console.error(e);
   alert("Error inicializando la app. Mira la consola del navegador.");
 });
+
+// FIXED INIT TIMING WITH SUPABASE
+window.addEventListener('supabaseReady', async () => {
+  try {
+    await loadAll()
+    renderPatientsTable()
+  } catch (e) {
+    console.error('Error loading patients after Supabase ready:', e)
+  }
+})
 
 
 async function testSupabase() {
