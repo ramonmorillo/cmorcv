@@ -812,6 +812,7 @@
     const supabaseKey = "sb_publishable_o7NCp8sm8ExsW6daOi_gJQ_Hg5dbUJV";
 
     window.supabase = createClient(supabaseUrl, supabaseKey);
+    window.dispatchEvent(new Event('supabaseReady'));
   </script>
   <script src="./app.js?v=20260225_1000"></script>
 </body>
