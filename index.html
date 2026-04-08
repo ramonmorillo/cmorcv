@@ -804,6 +804,15 @@
     </main>
   </div>
 
+
+  <script type="module">
+    import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+    const supabaseUrl = "https://iagxemernqvdmbysihcy.supabase.co";
+    const supabaseKey = "PASTE_PUBLISHABLE_KEY_HERE";
+
+    window.supabase = createClient(supabaseUrl, supabaseKey);
+  </script>
   <script src="./app.js?v=20260225_1000"></script>
 </body>
 </html>
