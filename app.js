@@ -2826,4 +2826,6 @@ async function testSupabase() {
   console.log('SUPABASE TEST:', data, error)
 }
 
-testSupabase()
+window.addEventListener('supabaseReady', () => {
+  testSupabase()
+})
