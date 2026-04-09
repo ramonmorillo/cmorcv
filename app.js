@@ -496,9 +496,9 @@ function mapVisitRowToFrontend(row, patientsByUuid = new Map()) {
 
 async function loadVisitsSchema() {
   if (!window.supabase) return null;
-  const requiredColumns = ["patient_id", "created_by", "created_at"];
+  const requiredColumns = ["patient_id", "visit_date", "visit_type", "notes", "created_by"];
   const optionalCandidates = [
-    "local_visit_code", "visit_date", "hospital_drug", "ldl", "ldl_target", "ldl_goal_achieved",
+    "created_at", "updated_at", "id", "local_visit_code", "hospital_drug", "ldl", "ldl_target", "ldl_goal_achieved",
     "treatment", "adherence", "ram", "strat_vars", "cmo_score", "priority_level",
     "priority_justification", "oft_objectives", "follow_up_plan", "next_visit_suggested",
   ];
@@ -507,17 +507,23 @@ async function loadVisitsSchema() {
   for (const col of requiredColumns) {
     const { error } = await window.supabase.from("visits").select(col).limit(1);
     if (error) {
-      console.error(`[VISITS SCHEMA] Missing/blocked required column '${col}':`, error);
+      console.error(`[VISITS SCHEMA] required column check failed: visits.${col}`, error);
       return null;
     }
+    console.log(`[VISITS SCHEMA] required column available: visits.${col}`);
     schema.required.add(col);
   }
 
   for (const col of optionalCandidates) {
     const { error } = await window.supabase.from("visits").select(col).limit(1);
-    if (!error) schema.optional.add(col);
+    if (!error) {
+      schema.optional.add(col);
+      continue;
+    }
+    console.warn(`[VISITS SCHEMA] optional column unavailable (continuing in minimal mode): visits.${col}`, error);
   }
 
+  console.log("[VISITS SCHEMA] verification OK (minimal required schema available)");
   APP.state.visitsSchema = schema;
   return schema;
 }
@@ -525,10 +531,12 @@ async function loadVisitsSchema() {
 function buildVisitInsertRow(visit, patientUuid, authUser, schema) {
   const base = {
     patient_id: patientUuid,
+    visit_date: visit.date,
+    visit_type: visit.visitType || "follow_up",
+    notes: visit.notes || visit.followUpPlan || "",
     created_by: authUser.id,
     created_at: new Date().toISOString(),
     local_visit_code: visit.visitId,
-    visit_date: visit.date,
     hospital_drug: visit.hospitalDrug,
     ldl: visit.ldl,
     ldl_target: visit.ldlTarget,
