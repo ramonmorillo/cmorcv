@@ -346,6 +346,7 @@ const APP = {
     authUser: null,
     myProfile: null,
     centerId: null,
+    visitsSchema: null,
     appInitialized: false,
     authUiBound: false,
   },
@@ -462,6 +463,96 @@ function mapPatientRowToFrontend(row) {
     createdAt: row.created_at || null,
     schemaVersion: APP.schemaVersion,
   };
+}
+
+function mapVisitRowToFrontend(row, patientsByUuid = new Map()) {
+  if (!row) return null;
+  const linkedPatient = patientsByUuid.get(row.patient_id) || null;
+  return {
+    id: row.id ?? null,
+    visitId: row.local_visit_code || `VISIT-${row.id || row.patient_id || "UNKNOWN"}`,
+    patientId: linkedPatient?.patientId || row.patient_id || "",
+    patientUuid: row.patient_id ?? null,
+    center_id: row.center_id ?? null,
+    created_by: row.created_by ?? null,
+    date: row.visit_date || null,
+    hospitalDrug: row.hospital_drug || "—",
+    ldl: row.ldl ?? null,
+    ldlTarget: row.ldl_target ?? null,
+    ldlGoalAchieved: row.ldl_goal_achieved ?? null,
+    treatment: row.treatment ?? null,
+    adherence: row.adherence ?? null,
+    ram: row.ram ?? null,
+    stratVars: row.strat_vars || {},
+    cmoScore: row.cmo_score ?? 0,
+    priorityLevel: row.priority_level ?? 3,
+    priorityJustification: row.priority_justification ?? null,
+    oftObjectives: row.oft_objectives ?? null,
+    followUpPlan: row.follow_up_plan ?? null,
+    nextVisitSuggested: row.next_visit_suggested ?? null,
+    createdAt: row.created_at || null,
+    schemaVersion: APP.schemaVersion,
+  };
+}
+
+async function loadVisitsSchema() {
+  if (!window.supabase) return null;
+  const requiredColumns = ["patient_id", "center_id", "created_by", "created_at"];
+  const optionalCandidates = [
+    "local_visit_code", "visit_date", "hospital_drug", "ldl", "ldl_target", "ldl_goal_achieved",
+    "treatment", "adherence", "ram", "strat_vars", "cmo_score", "priority_level",
+    "priority_justification", "oft_objectives", "follow_up_plan", "next_visit_suggested",
+  ];
+
+  const schema = { required: new Set(), optional: new Set(), optionalCandidates };
+  for (const col of requiredColumns) {
+    const { error } = await window.supabase.from("visits").select(col).limit(1);
+    if (error) {
+      console.error(`[VISITS SCHEMA] Missing/blocked required column '${col}':`, error);
+      return null;
+    }
+    schema.required.add(col);
+  }
+
+  for (const col of optionalCandidates) {
+    const { error } = await window.supabase.from("visits").select(col).limit(1);
+    if (!error) schema.optional.add(col);
+  }
+
+  APP.state.visitsSchema = schema;
+  return schema;
+}
+
+function buildVisitInsertRow(visit, patientUuid, authUser, profile, schema) {
+  const base = {
+    patient_id: patientUuid,
+    center_id: profile.center_id,
+    created_by: authUser.id,
+    created_at: new Date().toISOString(),
+    local_visit_code: visit.visitId,
+    visit_date: visit.date,
+    hospital_drug: visit.hospitalDrug,
+    ldl: visit.ldl,
+    ldl_target: visit.ldlTarget,
+    ldl_goal_achieved: visit.ldlGoalAchieved,
+    treatment: visit.treatment,
+    adherence: visit.adherence,
+    ram: visit.ram,
+    strat_vars: visit.stratVars,
+    cmo_score: visit.cmoScore,
+    priority_level: visit.priorityLevel,
+    priority_justification: visit.priorityJustification,
+    oft_objectives: visit.oftObjectives,
+    follow_up_plan: visit.followUpPlan,
+    next_visit_suggested: visit.nextVisitSuggested,
+  };
+
+  const allowed = new Set([...(schema?.required || []), ...(schema?.optional || [])]);
+  const out = {};
+  for (const [k, v] of Object.entries(base)) {
+    if (allowed.has(k)) out[k] = v;
+  }
+  return out;
 }
 
 function buildPatientInsertRow(patientFormState, authUser, profile) {
@@ -2132,6 +2223,10 @@ async function saveVisit() {
   if (!date) return toast("Fecha obligatoria.");
 
   const patient = APP.state.patients.find((p) => p.patientId === patientId);
+  if (!patient?.id) {
+    console.error("[VISITS] save blocked: selected patient has no Supabase UUID", patient);
+    return alert("No se encontró el UUID real del paciente. Recarga y vuelve a intentarlo.");
+  }
   const stratVars = (patient && patient.stratVars) || {};
   const score = computeStratScore(stratVars);
   const priorityLevel = levelFromScoreWithOverrides(score, stratVars);
@@ -2145,6 +2240,7 @@ async function saveVisit() {
   const visit = {
     visitId: makeVisitId(patientId, date),
     patientId,
+    patientUuid: patient.id,
     date,
     hospitalDrug: $("#v_hospDrug").value || "—",
     ldl,
@@ -2167,10 +2263,57 @@ async function saveVisit() {
     schemaVersion: APP.schemaVersion,
   };
 
+  if (!window.supabase) {
+    console.error("[VISITS] save blocked: Supabase client not ready.");
+    return alert("Error: cliente de Supabase no está listo.");
+  }
+
+  const { data: { user }, error: userError } = await window.supabase.auth.getUser();
+  if (userError || !user) {
+    console.error("[VISITS] auth.getUser failed:", userError);
+    return alert("No se pudo validar la sesión del usuario.");
+  }
+
+  const { data: profile, error: profileError } = await window.supabase
+    .from("profiles")
+    .select("id, center_id")
+    .eq("id", user.id)
+    .single();
+  if (profileError || !profile) {
+    console.error("[VISITS] profiles lookup failed:", profileError);
+    return alert("No se pudo cargar tu perfil para guardar la visita.");
+  }
+  if (!profile.center_id) {
+    console.error("[VISITS] profile missing center_id:", profile);
+    return alert("Tu perfil no tiene center_id asignado.");
+  }
+
+  const visitSchema = APP.state.visitsSchema || await loadVisitsSchema();
+  if (!visitSchema) {
+    console.error("[VISITS] schema verification failed. Insert aborted.");
+    return alert("No se pudo verificar el esquema de visitas en Supabase.");
+  }
+
+  const visitRow = buildVisitInsertRow(visit, patient.id, user, profile, visitSchema);
+  const { data: insertedVisit, error: insertError } = await window.supabase
+    .from("visits")
+    .insert([visitRow])
+    .select("*")
+    .single();
+  if (insertError) {
+    console.error("[VISITS] Supabase visits.insert failed. Full error object:", insertError);
+    console.error("[VISITS] insert payload:", visitRow);
+    return alert(`No se pudo guardar la visita en Supabase: ${insertError.message || "error desconocido"}`);
+  }
+
   const interventions = collectInterventionsFromPicker(patientId, visit.visitId);
 
-  await dbPut(APP.stores.visits, visit);
-  APP.state.visits.push(visit);
+  const patientsByUuid = new Map(APP.state.patients.map((p) => [p.id, p]));
+  const mappedVisit = mapVisitRowToFrontend(insertedVisit, patientsByUuid);
+
+  const visitForCache = mappedVisit || visit;
+  await dbPut(APP.stores.visits, visitForCache);
+  APP.state.visits.push(visitForCache);
 
   for (const i of interventions) {
     await dbPut(APP.stores.interventions, i);
@@ -2694,21 +2837,41 @@ async function loadAll() {
     if (!user) console.warn("No authenticated user in loadAll().");
     if (!centerId) console.warn("No center_id available in loadAll().");
     APP.state.patients = [];
+    APP.state.visits = [];
+    APP.state.interventions = await dbGetAll(APP.stores.interventions);
+    return;
   } else {
-    const { data, error } = await window.supabase
+    const { data: patientRows, error: patientsError } = await window.supabase
       .from('patients')
       .select('*')
       .eq('center_id', centerId)
       .order('created_at', { ascending: false });
-    if (error) {
-      console.error(error);
+    if (patientsError) {
+      console.error("[DATA] patients load error:", patientsError);
       APP.state.patients = [];
     } else {
-      APP.state.patients = (data || []).map(mapPatientRowToFrontend).filter(Boolean);
+      APP.state.patients = (patientRows || []).map(mapPatientRowToFrontend).filter(Boolean);
       console.log("[DATA] patients loaded from Supabase:", APP.state.patients.length);
     }
+
+    await loadVisitsSchema();
+    const { data: visitRows, error: visitsError } = await window.supabase
+      .from("visits")
+      .select("*")
+      .eq("center_id", centerId)
+      .order("created_at", { ascending: false });
+    if (visitsError) {
+      console.error("[DATA] visits load error:", visitsError);
+      APP.state.visits = [];
+    } else {
+      const patientsByUuid = new Map(APP.state.patients.map((p) => [p.id, p]));
+      APP.state.visits = (visitRows || []).map((row) => mapVisitRowToFrontend(row, patientsByUuid)).filter(Boolean);
+      console.log("[DATA] visits loaded from Supabase:", APP.state.visits.length);
+      for (const v of APP.state.visits) {
+        await dbPut(APP.stores.visits, v);
+      }
+    }
   }
-  APP.state.visits = await dbGetAll(APP.stores.visits);
   APP.state.interventions = await dbGetAll(APP.stores.interventions);
 }
 
