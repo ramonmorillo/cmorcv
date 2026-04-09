@@ -475,7 +475,7 @@ function mapVisitRowToFrontend(row, patientsByUuid = new Map()) {
     patientUuid: row.patient_id ?? null,
     created_by: row.created_by ?? null,
     date: row.visit_date || null,
-    hospitalDrug: row.hospital_drug || "—",
+    hospitalDrug: cleanOptionalText(row.hospital_drug),
     ldl: row.ldl ?? null,
     ldlTarget: row.ldl_target ?? null,
     ldlGoalAchieved: row.ldl_goal_achieved ?? null,
@@ -483,8 +483,8 @@ function mapVisitRowToFrontend(row, patientsByUuid = new Map()) {
     adherence: row.adherence ?? null,
     ram: row.ram ?? null,
     stratVars: row.strat_vars || {},
-    cmoScore: row.cmo_score ?? 0,
-    priorityLevel: row.priority_level ?? 3,
+    cmoScore: row.cmo_score ?? null,
+    priorityLevel: row.priority_level ?? null,
     priorityJustification: row.priority_justification ?? null,
     oftObjectives: row.oft_objectives ?? null,
     followUpPlan: row.follow_up_plan ?? null,
@@ -537,19 +537,19 @@ function buildVisitInsertRow(visit, patientUuid, authUser, schema) {
     created_by: authUser.id,
     created_at: new Date().toISOString(),
     local_visit_code: visit.visitId,
-    hospital_drug: visit.hospitalDrug,
+    hospital_drug: cleanOptionalText(visit.hospitalDrug),
     ldl: visit.ldl,
     ldl_target: visit.ldlTarget,
     ldl_goal_achieved: visit.ldlGoalAchieved,
-    treatment: visit.treatment,
-    adherence: visit.adherence,
-    ram: visit.ram,
-    strat_vars: visit.stratVars,
+    treatment: cleanOptionalText(visit.treatment),
+    adherence: cleanOptionalText(visit.adherence),
+    ram: cleanOptionalText(visit.ram),
+    strat_vars: visit.stratVars && Object.keys(visit.stratVars).length ? visit.stratVars : null,
     cmo_score: visit.cmoScore,
     priority_level: visit.priorityLevel,
-    priority_justification: visit.priorityJustification,
-    oft_objectives: visit.oftObjectives,
-    follow_up_plan: visit.followUpPlan,
+    priority_justification: cleanOptionalText(visit.priorityJustification),
+    oft_objectives: cleanOptionalText(visit.oftObjectives),
+    follow_up_plan: cleanOptionalText(visit.followUpPlan),
     next_visit_suggested: visit.nextVisitSuggested,
   };
 
@@ -586,6 +586,12 @@ function safeNum(x) {
   if (x === null || x === undefined || x === "") return null;
   const n = Number(String(x).replace(",", "."));
   return Number.isFinite(n) ? n : null;
+}
+
+function cleanOptionalText(x) {
+  const txt = String(x ?? "").trim();
+  if (!txt || txt === "—") return null;
+  return txt;
 }
 
 // ── File-read helper (Safari < 14 compat) ────────────────────────────────────
@@ -2181,26 +2187,26 @@ function generateHCFromForm() {
   const patient = APP.state.patients.find((p) => p.patientId === patientId);
   if (!patient) return toast("Paciente no encontrado.");
 
-  const stratVars = (patient && patient.stratVars) || {};
+  const stratVars = getStratSelections();
   const score = computeStratScore(stratVars);
   const lvl = levelFromScoreWithOverrides(score, stratVars);
 
   const visit = {
     date: $("#v_date").value || "—",
-    hospitalDrug: $("#v_hospDrug").value || "—",
+    hospitalDrug: cleanOptionalText($("#v_hospDrug").value),
     ldl: safeNum($("#v_ldl").value),
     ldlTarget: safeNum($("#v_ldlTarget").value),
     ldlGoalAchieved:
       $("#v_goalAch").value === "true" ? true : $("#v_goalAch").value === "false" ? false : null,
-    treatment: ($("#v_treatment").value || "").trim() || null,
-    adherence: ($("#v_adherence").value || "").trim() || null,
-    ram: ($("#v_ram").value || "").trim() || null,
+    treatment: cleanOptionalText($("#v_treatment").value),
+    adherence: cleanOptionalText($("#v_adherence").value),
+    ram: cleanOptionalText($("#v_ram").value),
     stratVars,
     cmoScore: score,
     priorityLevel: lvl,
-    priorityJustification: ($("#v_levelWhy").value || "").trim() || null,
-    oftObjectives: ($("#v_oft").value || "").trim() || null,
-    followUpPlan: ($("#v_follow").value || "").trim() || null,
+    priorityJustification: cleanOptionalText($("#v_levelWhy").value),
+    oftObjectives: cleanOptionalText($("#v_oft").value),
+    followUpPlan: cleanOptionalText($("#v_follow").value),
   };
 
   const tempVisitId = `TEMP-${patientId}-${visit.date}`;
@@ -2235,7 +2241,7 @@ async function saveVisit() {
     console.error("[VISITS] save blocked: selected patient has no Supabase UUID", patient);
     return alert("No se encontró el UUID real del paciente. Recarga y vuelve a intentarlo.");
   }
-  const stratVars = (patient && patient.stratVars) || {};
+  const stratVars = getStratSelections();
   const score = computeStratScore(stratVars);
   const priorityLevel = levelFromScoreWithOverrides(score, stratVars);
 
@@ -2250,21 +2256,21 @@ async function saveVisit() {
     patientId,
     patientUuid: patient.id,
     date,
-    hospitalDrug: $("#v_hospDrug").value || "—",
+    hospitalDrug: cleanOptionalText($("#v_hospDrug").value),
     ldl,
     ldlTarget,
     ldlGoalAchieved,
-    treatment: ($("#v_treatment").value || "").trim() || null,
-    adherence: ($("#v_adherence").value || "").trim() || null,
-    ram: ($("#v_ram").value || "").trim() || null,
+    treatment: cleanOptionalText($("#v_treatment").value),
+    adherence: cleanOptionalText($("#v_adherence").value),
+    ram: cleanOptionalText($("#v_ram").value),
 
     stratVars,
     cmoScore: score,
     priorityLevel,
-    priorityJustification: ($("#v_levelWhy").value || "").trim() || null,
+    priorityJustification: cleanOptionalText($("#v_levelWhy").value),
 
-    oftObjectives: ($("#v_oft").value || "").trim() || null,
-    followUpPlan: ($("#v_follow").value || "").trim() || null,
+    oftObjectives: cleanOptionalText($("#v_oft").value),
+    followUpPlan: cleanOptionalText($("#v_follow").value),
     nextVisitSuggested: null,
 
     createdAt: new Date().toISOString(),
