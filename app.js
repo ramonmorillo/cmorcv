@@ -2216,6 +2216,8 @@ async function copyHC() {
 }
 
 async function saveVisit() {
+  console.log("[VISIT SAVE] handler invoked");
+
   const patientId = APP.state.selectedPatientId;
   if (!patientId) return toast("Selecciona un paciente.");
 
@@ -2295,16 +2297,22 @@ async function saveVisit() {
   }
 
   const visitRow = buildVisitInsertRow(visit, patient.id, user, profile, visitSchema);
+  console.log("[VISIT SAVE] selected patient visible code", patientId);
+  console.log("[VISIT SAVE] selected patient Supabase UUID", patient.id);
+  console.log("[VISIT SAVE] final insert payload sent to visits", visitRow);
+  console.log("[VISIT SAVE] starting");
+
   const { data: insertedVisit, error: insertError } = await window.supabase
     .from("visits")
     .insert([visitRow])
     .select("*")
     .single();
   if (insertError) {
-    console.error("[VISITS] Supabase visits.insert failed. Full error object:", insertError);
-    console.error("[VISITS] insert payload:", visitRow);
-    return alert(`No se pudo guardar la visita en Supabase: ${insertError.message || "error desconocido"}`);
+    console.error("[VISIT SAVE] error", insertError);
+    return alert(`No se pudo guardar la visita en Supabase (tabla visits). Revisa la consola para el error completo. Detalle: ${insertError.message || "error desconocido"}`);
   }
+
+  console.log("[VISIT SAVE] success", insertedVisit);
 
   const interventions = collectInterventionsFromPicker(patientId, visit.visitId);
 
