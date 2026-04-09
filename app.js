@@ -431,6 +431,50 @@ function todayISO() {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+function mapPatientRowToFrontend(row) {
+  if (!row) return null;
+  return {
+    id: row.id ?? null,
+    center_id: row.center_id ?? null,
+    created_by: row.created_by ?? null,
+    created_at: row.created_at ?? null,
+    updated_at: row.updated_at ?? null,
+    patientId: row.local_patient_code || "",
+    prevalentCondition: "",
+    sex: row.sex || null,
+    birthYear: row.birth_year ?? null,
+    comorbidities: null,
+    notes: null,
+    status: row.active === false ? "inactive" : "active",
+    stratVars: {},
+    cmoScore: 0,
+    priorityLevel: 3,
+    createdAt: row.created_at || null,
+    schemaVersion: APP.schemaVersion,
+  };
+}
+
+function buildPatientInsertRow(patientFormState, authUser, profile) {
+  const birthYear = patientFormState.birthYear;
+  const numericBirthYear = birthYear === null || birthYear === undefined || birthYear === ""
+    ? null
+    : Number(birthYear);
+  const safeBirthYear = Number.isFinite(numericBirthYear) ? numericBirthYear : null;
+  const baselineDate = patientFormState.baselineDate
+    ? String(patientFormState.baselineDate).slice(0, 10)
+    : todayISO();
+
+  return {
+    center_id: profile.center_id,
+    local_patient_code: String(patientFormState.patientId || "").trim(),
+    sex: patientFormState.sex || null,
+    birth_year: safeBirthYear,
+    baseline_date: baselineDate,
+    active: true,
+    created_by: authUser.id,
+  };
+}
+
 function safeNum(x) {
   if (x === null || x === undefined || x === "") return null;
   const n = Number(String(x).replace(",", "."));
@@ -1728,20 +1772,63 @@ async function savePatient() {
     createdAt: new Date().toISOString(),
     schemaVersion: APP.schemaVersion,
   };
+  // TODO: persist prevalentCondition/comorbidities/notes/stratVars/CMO score in relational tables
+  // (e.g. visits / stratifications / interventions) instead of forcing these app-level fields into patients.
 
   const exists = APP.state.patients.some((x) => x.patientId === patientId);
   if (exists) return toast("Ese ID ya existe.");
 
-  // SUPABASE PATIENT SAVE
+  if (!window.supabase) {
+    console.error("Supabase client not ready while saving patient.");
+    return alert("Error: cliente de Supabase no está listo.");
+  }
+
+  const { data: { user }, error: userError } = await window.supabase.auth.getUser();
+  if (userError) {
+    console.error("Supabase auth.getUser() error:", userError);
+    return alert("No se pudo validar la sesión del usuario. Vuelve a iniciar sesión.");
+  }
+  if (!user) {
+    console.error("Patient insert blocked: no authenticated user.");
+    return alert("No hay usuario autenticado. Inicia sesión para guardar pacientes.");
+  }
+
+  const { data: profile, error: profileError } = await window.supabase
+    .from('profiles')
+    .select('id, center_id')
+    .eq('id', user.id)
+    .single();
+  if (profileError) {
+    console.error("Supabase profiles lookup error:", profileError);
+    return alert("No se pudo cargar tu perfil de usuario para guardar el paciente.");
+  }
+  if (!profile) {
+    console.error("Patient insert blocked: missing profile for user", user.id);
+    return alert("Perfil de usuario no encontrado. Contacta al administrador.");
+  }
+  if (!profile.center_id) {
+    console.error("Patient insert blocked: profile missing center_id", profile);
+    return alert("Tu perfil no tiene center_id asignado. Contacta al administrador.");
+  }
+
+  const patientRow = buildPatientInsertRow(p, user, profile);
+
   const { data, error } = await window.supabase
     .from('patients')
-    .insert([p])
-    .select();
+    .insert([patientRow])
+    .select()
+    .single();
   if (error) {
-    console.error(error);
-    return alert("Error guardando paciente en Supabase.");
+    console.error("Supabase patients.insert rejected:", error);
+    return alert(`Supabase rechazó el alta del paciente: ${error.message || "error desconocido"}`);
   }
-  APP.state.patients.push((data && data[0]) || p);
+
+  const savedPatient = mapPatientRowToFrontend(data);
+  if (!savedPatient) {
+    console.error("Supabase insert returned empty patient row:", data);
+    return alert("El paciente se guardó, pero no se pudo procesar la respuesta.");
+  }
+  APP.state.patients.push(savedPatient);
 
   fillConditionSelectors();
   updateStats();
@@ -2602,7 +2689,7 @@ async function loadAll() {
       console.error(error);
       APP.state.patients = [];
     } else {
-      APP.state.patients = data || [];
+      APP.state.patients = (data || []).map(mapPatientRowToFrontend).filter(Boolean);
     }
   }
   APP.state.visits = await dbGetAll(APP.stores.visits);
