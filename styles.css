@@ -49,6 +49,37 @@ body{
 .brandTitle{font-weight:800}
 .brandSub{color:var(--muted); font-size:12px; margin-top:2px}
 
+.contextCard{
+  border:1px solid var(--line);
+  border-radius:14px;
+  background: rgba(59,109,224,.04);
+  padding:10px 12px;
+  margin: 2px 2px 12px;
+}
+.contextTitle{
+  font-size:11px;
+  font-weight:800;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  margin-bottom:8px;
+}
+.contextRow{
+  display:flex;
+  justify-content:space-between;
+  gap:10px;
+  font-size:12px;
+  margin-bottom:5px;
+}
+.contextRow:last-child{margin-bottom:0}
+.contextLabel{color:var(--muted)}
+.contextValue{
+  color:var(--text);
+  font-weight:700;
+  text-align:right;
+  word-break:break-word;
+}
+
 .nav{display:flex; flex-direction:column; gap:8px; padding-top:6px}
 .navBtn{
   display:flex; align-items:center; gap:10px;
