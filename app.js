@@ -473,7 +473,6 @@ function mapVisitRowToFrontend(row, patientsByUuid = new Map()) {
     visitId: row.local_visit_code || `VISIT-${row.id || row.patient_id || "UNKNOWN"}`,
     patientId: linkedPatient?.patientId || row.patient_id || "",
     patientUuid: row.patient_id ?? null,
-    center_id: row.center_id ?? null,
     created_by: row.created_by ?? null,
     date: row.visit_date || null,
     hospitalDrug: row.hospital_drug || "—",
@@ -497,7 +496,7 @@ function mapVisitRowToFrontend(row, patientsByUuid = new Map()) {
 
 async function loadVisitsSchema() {
   if (!window.supabase) return null;
-  const requiredColumns = ["patient_id", "center_id", "created_by", "created_at"];
+  const requiredColumns = ["patient_id", "created_by", "created_at"];
   const optionalCandidates = [
     "local_visit_code", "visit_date", "hospital_drug", "ldl", "ldl_target", "ldl_goal_achieved",
     "treatment", "adherence", "ram", "strat_vars", "cmo_score", "priority_level",
@@ -523,10 +522,9 @@ async function loadVisitsSchema() {
   return schema;
 }
 
-function buildVisitInsertRow(visit, patientUuid, authUser, profile, schema) {
+function buildVisitInsertRow(visit, patientUuid, authUser, schema) {
   const base = {
     patient_id: patientUuid,
-    center_id: profile.center_id,
     created_by: authUser.id,
     created_at: new Date().toISOString(),
     local_visit_code: visit.visitId,
@@ -2296,7 +2294,7 @@ async function saveVisit() {
     return alert("No se pudo verificar el esquema de visitas en Supabase.");
   }
 
-  const visitRow = buildVisitInsertRow(visit, patient.id, user, profile, visitSchema);
+  const visitRow = buildVisitInsertRow(visit, patient.id, user, visitSchema);
   console.log("[VISIT SAVE] selected patient visible code", patientId);
   console.log("[VISIT SAVE] selected patient Supabase UUID", patient.id);
   console.log("[VISIT SAVE] final insert payload sent to visits", visitRow);
@@ -2865,8 +2863,8 @@ async function loadAll() {
     await loadVisitsSchema();
     const { data: visitRows, error: visitsError } = await window.supabase
       .from("visits")
-      .select("*")
-      .eq("center_id", centerId)
+      .select("*, patients!inner(id, center_id)")
+      .eq("patients.center_id", centerId)
       .order("created_at", { ascending: false });
     if (visitsError) {
       console.error("[DATA] visits load error:", visitsError);
