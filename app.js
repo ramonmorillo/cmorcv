@@ -339,6 +339,7 @@ const APP = {
     authUser: null,
     myProfile: null,
     centerId: null,
+    centerName: null,
     visitsSchema: null,
     appInitialized: false,
     authUiBound: false,
@@ -375,6 +376,7 @@ async function loadMyProfile() {
   if (!user || !window.supabase) {
     APP.state.myProfile = null;
     APP.state.centerId = null;
+    APP.state.centerName = null;
     return null;
   }
 
@@ -389,12 +391,30 @@ async function loadMyProfile() {
     console.error('Error loading profile:', error);
     APP.state.myProfile = null;
     APP.state.centerId = null;
+    APP.state.centerName = null;
     return null;
   }
 
   APP.state.myProfile = data;
   APP.state.centerId = data?.center_id ?? null;
+  APP.state.centerName = null;
+
+  if (APP.state.centerId) {
+    const { data: center, error: centerError } = await window.supabase
+      .from("centers")
+      .select("name")
+      .eq("id", APP.state.centerId)
+      .single();
+
+    if (centerError) {
+      console.warn("[AUTH] center lookup failed:", centerError);
+    } else if (center?.name) {
+      APP.state.centerName = center.name;
+    }
+  }
+
   console.log("[AUTH] profile.center_id:", APP.state.centerId);
+  console.log("[AUTH] center.name:", APP.state.centerName);
   return data;
 }
 
@@ -418,9 +438,8 @@ function renderAuthContext() {
   const user = APP.state.authUser;
   const profile = APP.state.myProfile || {};
   const centerName = String(
+    APP.state.centerName ||
     profile.center_name ||
-    profile.hospital_name ||
-    profile.center_display_name ||
     profile.center_id ||
     APP.state.centerId ||
     "Sin centro asignado"
