@@ -345,6 +345,7 @@ const APP = {
     authSession: null,
     authUser: null,
     myProfile: null,
+    centerId: null,
     appInitialized: false,
     authUiBound: false,
   },
@@ -377,7 +378,13 @@ async function getCurrentSession() {
 // LOAD AUTH PROFILE
 async function loadMyProfile() {
   const user = APP.state.authUser;
-  if (!user || !window.supabase) return null;
+  if (!user || !window.supabase) {
+    APP.state.myProfile = null;
+    APP.state.centerId = null;
+    return null;
+  }
+
+  console.log("[AUTH] user.id:", user.id);
   const { data, error } = await window.supabase
     .from('profiles')
     .select('*')
@@ -387,10 +394,13 @@ async function loadMyProfile() {
   if (error) {
     console.error('Error loading profile:', error);
     APP.state.myProfile = null;
+    APP.state.centerId = null;
     return null;
   }
 
   APP.state.myProfile = data;
+  APP.state.centerId = data?.center_id ?? null;
+  console.log("[AUTH] profile.center_id:", APP.state.centerId);
   return data;
 }
 
@@ -1828,7 +1838,7 @@ async function savePatient() {
     console.error("Supabase insert returned empty patient row:", data);
     return alert("El paciente se guardó, pero no se pudo procesar la respuesta.");
   }
-  APP.state.patients.push(savedPatient);
+  await loadAll();
 
   fillConditionSelectors();
   updateStats();
@@ -2676,20 +2686,26 @@ async function importJSON(file) {
 // ---------------- Bindings ----------------
 
 async function loadAll() {
-  // FIXED SUPABASE LOADALL
-  if (!window.supabase) {
-    console.warn("Supabase client not ready in loadAll().");
+  const user = APP.state.authUser;
+  const centerId = APP.state.centerId;
+
+  if (!window.supabase || !user || !centerId) {
+    if (!window.supabase) console.warn("Supabase client not ready in loadAll().");
+    if (!user) console.warn("No authenticated user in loadAll().");
+    if (!centerId) console.warn("No center_id available in loadAll().");
     APP.state.patients = [];
   } else {
     const { data, error } = await window.supabase
       .from('patients')
       .select('*')
+      .eq('center_id', centerId)
       .order('created_at', { ascending: false });
     if (error) {
       console.error(error);
       APP.state.patients = [];
     } else {
       APP.state.patients = (data || []).map(mapPatientRowToFrontend).filter(Boolean);
+      console.log("[DATA] patients loaded from Supabase:", APP.state.patients.length);
     }
   }
   APP.state.visits = await dbGetAll(APP.stores.visits);
@@ -2965,6 +2981,7 @@ function initDebugPanel() {
 
 async function init() {
   APP.state.db = await openDB();
+  await loadAll();
   fillConditionSelectors();
   fillHospitalDrugs();
   updateStats();
@@ -2978,7 +2995,7 @@ async function init() {
   initDebugPanel();
 
   setView("patientsView");
-  toast("Listo. Datos en local (IndexedDB).");
+  toast("Listo. Datos cargados desde Supabase.");
   devLog("[INIT] app lista, versión", APP_VERSION);
 }
 
@@ -2986,6 +3003,18 @@ async function initAppOnce() {
   if (APP.state.appInitialized) return;
   await init();
   APP.state.appInitialized = true;
+}
+
+async function refreshDataAfterAuth() {
+  await loadMyProfile();
+  if (!APP.state.appInitialized) {
+    await initAppOnce();
+    return;
+  }
+  await loadAll();
+  fillConditionSelectors();
+  updateStats();
+  renderPatientsTable();
 }
 
 function bindAuthUI() {
@@ -3016,8 +3045,7 @@ function bindAuthUI() {
         showApp();
         if (btnLogout) btnLogout.classList.remove("hidden");
 
-        await loadMyProfile();
-        await initAppOnce();
+        await refreshDataAfterAuth();
       } catch (e) {
         showLogin(e.message || "No se pudo iniciar sesión.");
       } finally {
@@ -3037,6 +3065,7 @@ function bindAuthUI() {
       APP.state.authSession = null;
       APP.state.authUser = null;
       APP.state.myProfile = null;
+      APP.state.centerId = null;
       if (loginPassword) loginPassword.value = "";
       btnLogout.classList.add("hidden");
       showLogin();
@@ -3067,8 +3096,7 @@ async function bootstrapWithSessionGate() {
     const btnLogout = $("#btnLogout");
     if (btnLogout) btnLogout.classList.remove("hidden");
 
-    await loadMyProfile();
-    await initAppOnce();
+    await refreshDataAfterAuth();
   } catch (e) {
     console.error("Error during session gate:", e);
     showLogin("No se pudo validar la sesión.");
