@@ -342,11 +342,73 @@ const APP = {
     selectedVisitId: null,
     // Pending CSV batches (set by prepare*, consumed by apply*)
     csvPending: { patients: null, visits: null, interventions: null },
+    authSession: null,
+    authUser: null,
+    myProfile: null,
+    appInitialized: false,
+    authUiBound: false,
   },
 };
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+
+// SUPABASE AUTH
+async function signIn(email, password) {
+  if (!window.supabase) throw new Error("Supabase no está listo.");
+  const { data, error } = await window.supabase.auth.signInWithPassword({ email, password });
+  if (error) throw error;
+  return data;
+}
+
+async function signOut() {
+  if (!window.supabase) return;
+  const { error } = await window.supabase.auth.signOut();
+  if (error) throw error;
+}
+
+async function getCurrentSession() {
+  if (!window.supabase) return null;
+  const { data, error } = await window.supabase.auth.getSession();
+  if (error) throw error;
+  return data.session || null;
+}
+
+// LOAD AUTH PROFILE
+async function loadMyProfile() {
+  const user = APP.state.authUser;
+  if (!user || !window.supabase) return null;
+  const { data, error } = await window.supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', user.id)
+    .single();
+
+  if (error) {
+    console.error('Error loading profile:', error);
+    APP.state.myProfile = null;
+    return null;
+  }
+
+  APP.state.myProfile = data;
+  return data;
+}
+
+function showLogin(message = "") {
+  const loginGate = $("#loginGate");
+  const appShell = $("#appShell");
+  if (loginGate) loginGate.classList.remove("hidden");
+  if (appShell) appShell.classList.add("hidden");
+  const err = $("#loginError");
+  if (err) err.textContent = message;
+}
+
+function showApp() {
+  const loginGate = $("#loginGate");
+  const appShell = $("#appShell");
+  if (loginGate) loginGate.classList.add("hidden");
+  if (appShell) appShell.classList.remove("hidden");
+}
 
 function toast(msg) {
   const el = $("#toast");
@@ -2833,35 +2895,103 @@ async function init() {
   devLog("[INIT] app lista, versión", APP_VERSION);
 }
 
-init().catch((e) => {
-  console.error(e);
-  alert("Error inicializando la app. Mira la consola del navegador.");
-});
+async function initAppOnce() {
+  if (APP.state.appInitialized) return;
+  await init();
+  APP.state.appInitialized = true;
+}
 
-// FIXED INIT TIMING WITH SUPABASE
-window.addEventListener('supabaseReady', async () => {
+function bindAuthUI() {
+  if (APP.state.authUiBound) return;
+  APP.state.authUiBound = true;
+  const btnLogin = $("#btnLogin");
+  const btnLogout = $("#btnLogout");
+  const loginEmail = $("#loginEmail");
+  const loginPassword = $("#loginPassword");
+
+  if (btnLogin) {
+    btnLogin.addEventListener("click", async () => {
+      const email = (loginEmail?.value || "").trim();
+      const password = loginPassword?.value || "";
+
+      if (!email || !password) {
+        showLogin("Introduce email y contraseña.");
+        return;
+      }
+
+      try {
+        showLogin("");
+        btnLogin.disabled = true;
+        const authData = await signIn(email, password);
+        APP.state.authSession = authData.session || null;
+        APP.state.authUser = authData.user || authData.session?.user || null;
+
+        showApp();
+        if (btnLogout) btnLogout.classList.remove("hidden");
+
+        await loadMyProfile();
+        await initAppOnce();
+      } catch (e) {
+        showLogin(e.message || "No se pudo iniciar sesión.");
+      } finally {
+        btnLogin.disabled = false;
+      }
+    });
+  }
+
+  if (btnLogout) {
+    btnLogout.addEventListener("click", async () => {
+      try {
+        await signOut();
+      } catch (e) {
+        console.error("Error signing out:", e);
+      }
+
+      APP.state.authSession = null;
+      APP.state.authUser = null;
+      APP.state.myProfile = null;
+      if (loginPassword) loginPassword.value = "";
+      btnLogout.classList.add("hidden");
+      showLogin();
+    });
+  }
+}
+
+// SESSION GATE
+async function bootstrapWithSessionGate() {
+  bindAuthUI();
+
   if (!window.supabase) {
-    // removed premature loadAll call
-    return
+    showLogin("Supabase no está disponible todavía.");
+    return;
   }
 
   try {
-    await loadAll()
-    renderPatientsTable()
+    const session = await getCurrentSession();
+    APP.state.authSession = session;
+    APP.state.authUser = session?.user || null;
+
+    if (!session) {
+      showLogin();
+      return;
+    }
+
+    showApp();
+    const btnLogout = $("#btnLogout");
+    if (btnLogout) btnLogout.classList.remove("hidden");
+
+    await loadMyProfile();
+    await initAppOnce();
   } catch (e) {
-    console.error('Error loading patients after Supabase ready:', e)
+    console.error("Error during session gate:", e);
+    showLogin("No se pudo validar la sesión.");
   }
-})
-
-
-async function testSupabase() {
-  const { data, error } = await window.supabase
-    .from('patients')
-    .select('*')
-
-  console.log('SUPABASE TEST:', data, error)
 }
 
-window.addEventListener('supabaseReady', () => {
-  testSupabase()
-})
+window.addEventListener("supabaseReady", () => {
+  bootstrapWithSessionGate();
+});
+
+if (window.supabase) {
+  bootstrapWithSessionGate();
+}
