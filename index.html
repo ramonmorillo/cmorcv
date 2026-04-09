@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Herramienta seguimiento CMO para RCV</title>
-  <link rel="stylesheet" href="./styles.css?v=20260225_1000" />
+  <link rel="stylesheet" href="./styles.css?v=20260409_1200" />
 </head>
 <body>
   <div id="loginGate" class="panel" style="max-width:420px;margin:40px auto;padding:20px">
@@ -35,7 +35,23 @@
         <div class="logo">CMO</div>
         <div class="brandText">
           <div class="brandTitle">Seguimiento CMO</div>
-          <div class="brandSub">Riesgo Cardiovascular · Local-first</div>
+          <div class="brandSub">Riesgo Cardiovascular · Supabase</div>
+        </div>
+      </div>
+
+      <div class="contextCard">
+        <div class="contextTitle">Contexto actual</div>
+        <div class="contextRow">
+          <span class="contextLabel">Centro</span>
+          <span class="contextValue" id="uiCenterName">—</span>
+        </div>
+        <div class="contextRow">
+          <span class="contextLabel">Usuario</span>
+          <span class="contextValue" id="uiUserEmail">—</span>
+        </div>
+        <div class="contextRow" id="uiUserRoleRow">
+          <span class="contextLabel">Rol</span>
+          <span class="contextValue" id="uiUserRole">—</span>
         </div>
       </div>
 
@@ -59,8 +75,7 @@
 
       <div class="sidebarFooter">
         <div class="smallMuted" style="font-weight:700;color:var(--text)">Creado por Ramon Morillo</div>
-        <div class="smallMuted">Febrero 2026</div>
-        <div class="smallMuted" style="margin-top:6px">Datos guardados localmente (IndexedDB). Backup periodico recomendado.</div>
+        <div class="smallMuted">Versión Supabase — Abril 2026</div>
       </div>
     </aside>
 
@@ -72,8 +87,8 @@
         </div>
 
         <div class="topbarRight">
-          <button class="btn ghost" id="btnQuickBackup" title="Backup JSON (recomendado)">
-            ⬇️ Backup
+          <button class="btn ghost" id="btnQuickBackup" title="Exportar respaldo JSON">
+            ⬇️ Respaldo JSON
           </button>
           <button class="btn ghost hidden" id="btnLogout" title="Cerrar sesión">Salir</button>
           <button class="btn" id="btnNewPatient">+ Nuevo paciente</button>
@@ -420,7 +435,7 @@
           <div class="panelHeader">
             <div>
               <div class="panelTitle">Exportación e Importación</div>
-              <div class="smallMuted">CSV estándar (sep. <b>,</b>) o Excel ES (sep. <b>;</b> + BOM) · Backup JSON para restauración exacta.</div>
+              <div class="smallMuted">Descarga de datos desde Supabase para análisis, auditoría o respaldo operativo.</div>
             </div>
           </div>
 
@@ -430,6 +445,7 @@
             <div class="smallMuted" style="margin-bottom:12px">
               <b>Estándar</b>: sep. <code class="inlineCode">,</code> · UTF-8 · CRLF — compatible con R, Python, Google Sheets.
               &nbsp;|&nbsp; <b>Excel ES</b>: sep. <code class="inlineCode">;</code> · UTF-8 BOM · para Excel en español sin configuración.
+              &nbsp;|&nbsp; Los ficheros reflejan los datos del centro activo.
             </div>
             <div class="grid grid3">
               <div class="card">
@@ -481,7 +497,7 @@
             <div class="exBlockTitle">⬆ Importar desde CSV</div>
             <div class="smallMuted" style="margin-bottom:12px">
               Acepta sep. <b>,</b> (estándar) o <b>;</b> (Excel ES) — detección automática. Valida antes de guardar.
-              Los registros con ID existente se <b>actualizan</b>. Para restauración completa usa el Backup JSON.
+              Los registros con ID existente se <b>actualizan</b> en Supabase para el centro activo.
             </div>
             <div class="grid grid3">
               <div class="card">
@@ -576,16 +592,16 @@
       <section id="aboutView" class="view hidden">
         <div class="panel">
           <div class="panelHeader">
-            <div class="panelTitle">Buenas prácticas (local-first, RGPD, copias de seguridad)</div>
+            <div class="panelTitle">Buenas prácticas (Supabase, RGPD y continuidad de datos)</div>
           </div>
           <div class="card">
             <div class="cardBody">
-              <p style="margin:0 0 10px;font-size:12px;color:var(--muted)"><b style="color:var(--text)">⬇️ Copias de seguridad</b> — Utiliza «Backup JSON» periódicamente y guarda una copia en un lugar seguro.</p>
+              <p style="margin:0 0 10px;font-size:12px;color:var(--muted)"><b style="color:var(--text)">🔐 Entorno autenticado</b> — Cada usuario trabaja sobre los datos de su centro asignado en Supabase.</p>
               <p style="margin:0 0 8px;font-weight:700;font-size:13px;color:var(--text)">Ayuda rápida</p>
               <ul class="bullets">
-                <li><b>Local-first:</b> los datos se guardan únicamente en este navegador (IndexedDB).</li>
+                <li><b>Datos compartidos por centro:</b> pacientes y visitas se almacenan en Supabase con control por centro.</li>
                 <li><b>RGPD:</b> usa un ID pseudonimizado. No guardes nombre, NHC/NIH, teléfono u otros datos personales.</li>
-                <li><b>Copias de seguridad:</b> utiliza «Backup JSON» de forma periódica y conserva una copia en un lugar seguro.</li>
+                <li><b>Respaldo operativo:</b> exporta CSV/JSON cuando necesites auditoría, investigación o copia externa.</li>
                 <li><b>Investigación:</b> exporta CSV (patients/visits/interventions) para análisis y auditoría.</li>
                 <li><b>Estratificación:</b> variables por visita; precarga en sucesivas; puntuación y nivel calculados con cortes fijos.</li>
               </ul>
@@ -603,7 +619,7 @@
               <p style="margin:0 0 6px;font-weight:700;font-size:13px;color:var(--text)">Identificación del software</p>
               <p style="margin:0 0 4px;color:var(--muted);font-size:13px"><b style="color:var(--text)">Nombre del software:</b> CMO-RCV</p>
               <p style="margin:0 0 4px;color:var(--muted);font-size:13px"><b style="color:var(--text)">Tipo de obra:</b> Programa de ordenador (aplicación web)</p>
-              <p style="margin:0 0 4px;color:var(--muted);font-size:13px"><b style="color:var(--text)">Versión:</b> v1.0</p>
+              <p style="margin:0 0 4px;color:var(--muted);font-size:13px"><b style="color:var(--text)">Versión:</b> Supabase — Abril 2026</p>
               <p style="margin:0 0 4px;color:var(--muted);font-size:13px"><b style="color:var(--text)">Autor:</b> Ramón Morillo</p>
               <p style="margin:0 0 12px;color:var(--muted);font-size:13px"><b style="color:var(--text)">Fecha de creación:</b> Febrero 2026</p>
               <p style="margin:0 0 6px;font-weight:700;font-size:13px;color:var(--text)">Referencia conceptual</p>
@@ -620,7 +636,7 @@
             <div class="cardBody" style="font-size:12px;line-height:1.55;color:var(--muted)">
               <p style="margin:0 0 10px"><b style="color:var(--text)">1. Finalidad.</b> Esta herramienta está diseñada exclusivamente como apoyo al seguimiento farmacoterapéutico en consultas de atención farmacéutica hospitalaria, con fines asistenciales, docentes y de investigación. No sustituye al juicio clínico profesional ni a los sistemas de historia clínica electrónica del centro.</p>
               <p style="margin:0 0 10px"><b style="color:var(--text)">2. Marco regulatorio.</b> Esta herramienta no constituye un producto sanitario conforme al Reglamento (UE) 2017/745. Su uso es complementario y se realiza bajo responsabilidad del profesional sanitario y de la institución correspondiente.</p>
-              <p style="margin:0 0 10px"><b style="color:var(--text)">3. Protección de datos (RGPD/LOPDGDD).</b> La herramienta funciona íntegramente en el navegador del usuario (arquitectura local-first). No se transmiten datos a servidores externos. El autor no accede ni puede acceder a los datos almacenados. El usuario es responsable de utilizar únicamente identificadores pseudonimizados y de no introducir datos de carácter personal, conforme al Reglamento (UE) 2016/679 (RGPD) y la Ley Orgánica 3/2018 (LOPDGDD). El responsable del tratamiento de los datos será, en su caso, la institución sanitaria o el profesional usuario, según la normativa y procedimientos aplicables.</p>
+              <p style="margin:0 0 10px"><b style="color:var(--text)">3. Protección de datos (RGPD/LOPDGDD).</b> La herramienta utiliza Supabase como backend autenticado para persistencia de datos clínicos pseudonimizados. El acceso está condicionado por usuario y centro, y debe alinearse con las políticas de seguridad institucionales. El usuario es responsable de utilizar únicamente identificadores pseudonimizados y de no introducir datos de carácter personal, conforme al Reglamento (UE) 2016/679 (RGPD) y la Ley Orgánica 3/2018 (LOPDGDD). El responsable del tratamiento de los datos será, en su caso, la institución sanitaria o el profesional usuario, según la normativa y procedimientos aplicables.</p>
               <p style="margin:0 0 10px"><b style="color:var(--text)">4. Responsabilidad del usuario.</b> El profesional sanitario es responsable de: (a) verificar la exactitud de los datos introducidos; (b) realizar copias de seguridad periódicas; (c) cumplir la normativa de protección de datos y seguridad de la información de su institución; y (d) contrastar cualquier estratificación o recomendación con guías clínicas vigentes y el contexto clínico del paciente.</p>
               <p style="margin:0 0 10px"><b style="color:var(--text)">5. Propiedad intelectual.</b> Todos los derechos sobre el diseño, el código y el contenido original de esta herramienta pertenecen al autor. Se permite su uso con fines asistenciales, docentes e investigadores dentro del marco institucional. Cualquier reproducción, distribución, comunicación pública o modificación fuera de este ámbito requerirá autorización expresa y por escrito del autor.</p>
               <p style="margin:0"><b style="color:var(--text)">6. Ausencia de garantías y limitación de responsabilidad.</b> La herramienta se proporciona «tal cual» (<i>AS IS</i>), sin garantías de ningún tipo, expresas o implícitas, incluyendo exactitud, fiabilidad o idoneidad para un propósito específico. En ningún caso el autor será responsable de daños directos, indirectos, incidentales o consecuentes derivados del uso o la imposibilidad de uso de la herramienta (incluyendo, entre otros, pérdida de datos, interrupción de la actividad asistencial o decisiones clínicas inadecuadas), salvo en los casos legalmente previstos.</p>
@@ -837,6 +853,6 @@
     window.supabase = createClient(supabaseUrl, supabaseKey);
     window.dispatchEvent(new Event('supabaseReady'));
   </script>
-  <script src="./app.js?v=20260225_1000"></script>
+  <script src="./app.js?v=20260409_1200"></script>
 </body>
 </html>

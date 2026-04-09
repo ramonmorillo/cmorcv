@@ -1,17 +1,10 @@
 /* Herramienta de seguimiento CMO para Riesgo Cardiovascular (RCV)
    Creado por Ramon Morillo — Febrero 2026
    ---
-   Local-first (IndexedDB) — GitHub Pages friendly
-   - Patients, Visits, Interventions
-   - Stratification variables per visit (prefill from last visit)
-   - Cutoffs fixed: >=23 => Level 1, >=17 => Level 2, else Level 3
-   - Overrides: Pregnancy (Prioridad 1) => Level 1 regardless of score
-   - Hospital drugs list (PCSK9)
-   - Export CSV + Backup JSON + Import JSON
-   - Modern UI + LDL chart (canvas) no external libs
+   Versión Supabase — GitHub Pages friendly
 */
 
-const APP_VERSION = "20260225_1000";
+const APP_VERSION = "20260409_1200";
 const IS_DEV = typeof window !== "undefined" &&
   (location.hostname === "localhost" || location.hostname === "127.0.0.1" ||
    new URLSearchParams(location.search).has("debug"));
@@ -419,6 +412,31 @@ function showApp() {
   const appShell = $("#appShell");
   if (loginGate) loginGate.classList.add("hidden");
   if (appShell) appShell.classList.remove("hidden");
+}
+
+function renderAuthContext() {
+  const user = APP.state.authUser;
+  const profile = APP.state.myProfile || {};
+  const centerName = String(
+    profile.center_name ||
+    profile.hospital_name ||
+    profile.center_display_name ||
+    profile.center_id ||
+    APP.state.centerId ||
+    "Sin centro asignado"
+  );
+  const userEmail = user?.email || "Sin sesión";
+  const role = profile.role || profile.user_role || "";
+
+  const centerEl = $("#uiCenterName");
+  const emailEl = $("#uiUserEmail");
+  const roleEl = $("#uiUserRole");
+  const roleRow = $("#uiUserRoleRow");
+
+  if (centerEl) centerEl.textContent = centerName;
+  if (emailEl) emailEl.textContent = userEmail;
+  if (roleEl) roleEl.textContent = role || "—";
+  if (roleRow) roleRow.classList.toggle("hidden", !role);
 }
 
 function toast(msg) {
@@ -959,8 +977,8 @@ function setView(viewId) {
     patientsView: ["Pacientes", "Registro longitudinal con CMO + exportación para investigación"],
     dashboardView: ["Dashboard", "Indicadores de seguimiento, estratificación y respuesta"],
     interventionsView: ["Intervenciones", "Registro de intervenciones CMO por paciente y estado"],
-    exportsView: ["Exportación", "CSV (Excel) + Backup JSON + restauración"],
-    aboutView: ["Ayuda", "Buenas prácticas (local-first, RGPD, backups)"],
+    exportsView: ["Exportación", "Descarga e importación de datos del centro activo en Supabase"],
+    aboutView: ["Ayuda", "Buenas prácticas de uso, seguridad y continuidad de datos"],
   };
   const [t, h] = titleMap[viewId] || ["", ""];
   $("#pageTitle").textContent = t;
@@ -3190,6 +3208,7 @@ async function initAppOnce() {
 
 async function refreshDataAfterAuth() {
   await loadMyProfile();
+  renderAuthContext();
   if (!APP.state.appInitialized) {
     await initAppOnce();
     return;
@@ -3249,6 +3268,7 @@ function bindAuthUI() {
       APP.state.authUser = null;
       APP.state.myProfile = null;
       APP.state.centerId = null;
+      renderAuthContext();
       if (loginPassword) loginPassword.value = "";
       btnLogout.classList.add("hidden");
       showLogin();
@@ -3269,6 +3289,7 @@ async function bootstrapWithSessionGate() {
     const session = await getCurrentSession();
     APP.state.authSession = session;
     APP.state.authUser = session?.user || null;
+    renderAuthContext();
 
     if (!session) {
       showLogin();
