@@ -794,8 +794,18 @@
                 <textarea class="textarea" id="v_follow" rows="2"></textarea>
               </div>
 
+              <div class="field">
+                <label>Nivel catálogo intervenciones</label>
+                <select class="select" id="v_interventionLevel">
+                  <option value="1">Nivel 1</option>
+                  <option value="2">Nivel 2</option>
+                  <option value="3">Nivel 3</option>
+                </select>
+                <div class="smallMuted" id="v_interventionLevelHint">Nivel 3 · basal actions</div>
+              </div>
+
               <div class="field span2">
-                <label>Intervenciones CMO (selecciona y define estado)</label>
+                <label>Intervenciones CMO (checklist por nivel + estado + notas)</label>
                 <div class="interventionsWrap" id="interventionsPicker"></div>
               </div>
             </div>

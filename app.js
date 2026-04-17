@@ -302,29 +302,28 @@ const APP = {
     },
   ],
 
-  interventionCatalog: {
-    Capacidad: [
-      "Educación sobre enfermedad",
-      "Educación sobre tratamiento",
-      "Revisión técnica de administración",
-      "Simplificación del régimen",
-      "Material educativo entregado",
-    ],
-    Motivación: [
-      "Entrevista motivacional",
-      "Identificación de barreras",
-      "Revisión de creencias/expectativas",
-      "Reforzar objetivos terapéuticos",
-      "Acuerdo de plan terapéutico",
-    ],
-    Oportunidad: [
-      "Seguimiento telefarmacia",
-      "Coordinación con médico",
-      "Coordinación con enfermería",
-      "Ajuste agenda / circuito",
-      "Recordatorio / cita programada",
-    ],
-  },
+  interventionLevelCatalog: [
+    // Nivel 1 = intensive actions
+    { interventionKey: "cap_disease_education_intensive", cmoDimension: "Capacidad", level: 1, title: "Educación intensiva sobre enfermedad", defaultActionIntensity: "intensive" },
+    { interventionKey: "cap_treatment_education_intensive", cmoDimension: "Capacidad", level: 1, title: "Educación intensiva sobre tratamiento", defaultActionIntensity: "intensive" },
+    { interventionKey: "mot_barrier_resolution_intensive", cmoDimension: "Motivación", level: 1, title: "Resolución intensiva de barreras", defaultActionIntensity: "intensive" },
+    { interventionKey: "opp_multidisciplinary_coordination_intensive", cmoDimension: "Oportunidad", level: 1, title: "Coordinación multidisciplinar intensiva", defaultActionIntensity: "intensive" },
+    { interventionKey: "opp_telepharmacy_close_followup_intensive", cmoDimension: "Oportunidad", level: 1, title: "Telefarmacia estrecha", defaultActionIntensity: "intensive" },
+
+    // Nivel 2 = intermediate actions
+    { interventionKey: "cap_administration_technique_review_intermediate", cmoDimension: "Capacidad", level: 2, title: "Revisión técnica de administración", defaultActionIntensity: "intermediate" },
+    { interventionKey: "cap_regimen_simplification_intermediate", cmoDimension: "Capacidad", level: 2, title: "Simplificación del régimen", defaultActionIntensity: "intermediate" },
+    { interventionKey: "mot_motivational_interview_intermediate", cmoDimension: "Motivación", level: 2, title: "Entrevista motivacional", defaultActionIntensity: "intermediate" },
+    { interventionKey: "mot_reinforce_goals_intermediate", cmoDimension: "Motivación", level: 2, title: "Reforzar objetivos terapéuticos", defaultActionIntensity: "intermediate" },
+    { interventionKey: "opp_medical_nursing_coordination_intermediate", cmoDimension: "Oportunidad", level: 2, title: "Coordinación con médico/enfermería", defaultActionIntensity: "intermediate" },
+
+    // Nivel 3 = basal actions
+    { interventionKey: "cap_educational_material_basal", cmoDimension: "Capacidad", level: 3, title: "Material educativo entregado", defaultActionIntensity: "basal" },
+    { interventionKey: "mot_expectation_review_basal", cmoDimension: "Motivación", level: 3, title: "Revisión de creencias/expectativas", defaultActionIntensity: "basal" },
+    { interventionKey: "mot_therapeutic_agreement_basal", cmoDimension: "Motivación", level: 3, title: "Acuerdo de plan terapéutico", defaultActionIntensity: "basal" },
+    { interventionKey: "opp_agenda_circuit_adjustment_basal", cmoDimension: "Oportunidad", level: 3, title: "Ajuste agenda / circuito", defaultActionIntensity: "basal" },
+    { interventionKey: "opp_reminder_programmed_appointment_basal", cmoDimension: "Oportunidad", level: 3, title: "Recordatorio / cita programada", defaultActionIntensity: "basal" },
+  ],
 
   state: {
     db: null,
@@ -341,6 +340,8 @@ const APP = {
     centerId: null,
     centerName: null,
     visitsSchema: null,
+    interventionCatalogByLevel: {},
+    interventionCatalogByKey: {},
     appInitialized: false,
     authUiBound: false,
   },
@@ -522,6 +523,7 @@ function mapVisitRowToFrontend(row, patientsByUuid = new Map()) {
     stratVars: row.strat_vars || {},
     cmoScore: row.cmo_score ?? null,
     priorityLevel: row.priority_level ?? null,
+    interventionCatalogLevel: row.intervention_catalog_level ?? null,
     priorityJustification: row.priority_justification ?? null,
     oftObjectives: row.oft_objectives ?? null,
     followUpPlan: row.follow_up_plan ?? null,
@@ -537,7 +539,7 @@ async function loadVisitsSchema() {
   const optionalCandidates = [
     "created_at", "updated_at", "id", "local_visit_code", "hospital_drug", "ldl", "ldl_target", "ldl_goal_achieved",
     "treatment", "adherence", "ram", "strat_vars", "cmo_score", "priority_level",
-    "priority_justification", "oft_objectives", "follow_up_plan", "next_visit_suggested",
+    "priority_justification", "oft_objectives", "follow_up_plan", "next_visit_suggested", "intervention_catalog_level",
   ];
 
   const schema = { required: new Set(), optional: new Set(), optionalCandidates };
@@ -584,6 +586,7 @@ function buildVisitInsertRow(visit, patientUuid, authUser, schema) {
     strat_vars: visit.stratVars && Object.keys(visit.stratVars).length ? visit.stratVars : null,
     cmo_score: visit.cmoScore,
     priority_level: visit.priorityLevel,
+    intervention_catalog_level: visit.interventionCatalogLevel,
     priority_justification: cleanOptionalText(visit.priorityJustification),
     oft_objectives: cleanOptionalText(visit.oftObjectives),
     follow_up_plan: cleanOptionalText(visit.followUpPlan),
@@ -839,6 +842,7 @@ const CSV_SCHEMA = {
     { key: "ram",                 required: false, type: "string" },
     { key: "cmoScore",            required: false, type: "number" },
     { key: "priorityLevel",       required: false, type: "number" },
+    { key: "interventionCatalogLevel", required: false, type: "number" },
     { key: "priorityJustification", required: false, type: "string" },
     { key: "oftObjectives",       required: false, type: "string" },
     { key: "followUpPlan",        required: false, type: "string" },
@@ -851,6 +855,9 @@ const CSV_SCHEMA = {
     { key: "patientId",       required: true,  type: "string" },
     { key: "visitId",         required: true,  type: "string" },
     { key: "type",            required: false, type: "string" },
+    { key: "catalogItemId",   required: false, type: "string" },
+    { key: "interventionLevel", required: false, type: "number" },
+    { key: "actionIntensity", required: false, type: "enum", values: ["intensive", "intermediate", "basal"] },
     { key: "cmoDimension",    required: true,  type: "string" },
     { key: "description",     required: true,  type: "string" },
     { key: "status",          required: true,  type: "enum",   values: ["accepted", "pending", "rejected"] },
@@ -981,6 +988,43 @@ function levelFromScoreWithOverrides(score, selections) {
     }
   }
   return levelFromScore(score);
+}
+
+function ensureInterventionCatalogIndexes() {
+  if (Object.keys(APP.state.interventionCatalogByKey).length) return;
+
+  const byLevel = { 1: [], 2: [], 3: [] };
+  const byKey = {};
+  for (const item of APP.interventionLevelCatalog) {
+    const normalized = {
+      interventionKey: item.interventionKey,
+      cmoDimension: item.cmoDimension,
+      level: item.level,
+      title: item.title,
+      defaultActionIntensity: item.defaultActionIntensity || (item.level === 1 ? "intensive" : item.level === 2 ? "intermediate" : "basal"),
+    };
+    byKey[normalized.interventionKey] = normalized;
+    if (!byLevel[normalized.level]) byLevel[normalized.level] = [];
+    byLevel[normalized.level].push(normalized);
+  }
+  APP.state.interventionCatalogByLevel = byLevel;
+  APP.state.interventionCatalogByKey = byKey;
+}
+
+function getInterventionCatalogItemFromRow(interventionRow) {
+  ensureInterventionCatalogIndexes();
+
+  if (interventionRow.catalogItemId && APP.state.interventionCatalogByKey[interventionRow.catalogItemId]) {
+    return APP.state.interventionCatalogByKey[interventionRow.catalogItemId];
+  }
+  if (interventionRow.interventionKey && APP.state.interventionCatalogByKey[interventionRow.interventionKey]) {
+    return APP.state.interventionCatalogByKey[interventionRow.interventionKey];
+  }
+
+  const fallback = APP.interventionLevelCatalog.find((item) =>
+    item.cmoDimension === interventionRow.cmoDimension && item.title === interventionRow.description
+  );
+  return fallback || null;
 }
 
 // ---------------- UI: Navigation ----------------
@@ -1758,11 +1802,13 @@ function openVisitDetail(visitId) {
   const cont = $("#vd_interventions");
   cont.innerHTML = ints.length ? "" : `<span class="smallMuted">Sin intervenciones registradas.</span>`;
   for (const i of ints) {
+    const catalogItem = getInterventionCatalogItemFromRow(i);
+    const levelLabel = i.interventionLevel || catalogItem?.level;
     const chip = document.createElement("span");
     chip.className =
       "chip " + (i.status === "accepted" ? "ok" : i.status === "rejected" ? "no" : "wait");
     const st = i.status === "accepted" ? "✅" : i.status === "rejected" ? "❌" : "⏳";
-    chip.textContent = `${st} ${i.cmoDimension} · ${i.description}`;
+    chip.textContent = `${st} ${i.cmoDimension} · ${i.description}${levelLabel ? ` · L${levelLabel}` : ""}`;
     cont.appendChild(chip);
   }
 
@@ -2083,21 +2129,30 @@ function autoFillLevelFromScore() {
 
 // ---------------- Interventions UI ----------------
 
-function buildInterventionsPicker() {
+function buildInterventionsPicker(level = 3) {
+  ensureInterventionCatalogIndexes();
   const container = $("#interventionsPicker");
   container.innerHTML = "";
 
-  for (const [dim, items] of Object.entries(APP.interventionCatalog)) {
+  const safeLevel = [1, 2, 3].includes(Number(level)) ? Number(level) : 3;
+  const levelCatalog = APP.state.interventionCatalogByLevel[safeLevel] || [];
+  const grouped = levelCatalog.reduce((acc, item) => {
+    if (!acc[item.cmoDimension]) acc[item.cmoDimension] = [];
+    acc[item.cmoDimension].push(item);
+    return acc;
+  }, {});
+
+  for (const [dim, items] of Object.entries(grouped)) {
     const title = document.createElement("div");
     title.className = "intervGroupTitle";
-    title.textContent = dim;
+    title.textContent = `${dim} · Nivel ${safeLevel}`;
     container.appendChild(title);
 
-    for (const desc of items) {
+    for (const item of items) {
       const row = document.createElement("div");
       row.className = "intervRow";
       row.innerHTML = `
-        <div class="smallMuted">${desc}</div>
+        <label class="intervLabel"><input type="checkbox" data-int-enabled /> <span>${item.title}</span></label>
         <select class="select" data-int-status>
           <option value="">—</option>
           <option value="accepted">accepted</option>
@@ -2106,8 +2161,27 @@ function buildInterventionsPicker() {
         </select>
         <input class="input" data-int-note placeholder="Notas (opcional)" />
       `;
-      row.dataset.dim = dim;
-      row.dataset.desc = desc;
+      row.dataset.dim = item.cmoDimension;
+      row.dataset.desc = item.title;
+      row.dataset.level = String(item.level);
+      row.dataset.actionIntensity = item.defaultActionIntensity;
+      row.dataset.catalogItemId = item.interventionKey;
+      const enabledEl = row.querySelector("[data-int-enabled]");
+      const statusEl = row.querySelector("[data-int-status]");
+      const noteEl = row.querySelector("[data-int-note]");
+      const syncEnabled = () => {
+        const active = !!enabledEl?.checked;
+        if (statusEl) {
+          statusEl.disabled = !active;
+          if (!active) statusEl.value = "";
+        }
+        if (noteEl) {
+          noteEl.disabled = !active;
+          if (!active) noteEl.value = "";
+        }
+      };
+      enabledEl?.addEventListener("change", syncEnabled);
+      syncEnabled();
       container.appendChild(row);
     }
   }
@@ -2118,9 +2192,11 @@ function collectInterventionsFromPicker(patientId, visitId) {
   const picked = [];
   let idx = 0;
   for (const row of rows) {
+    const enabled = row.querySelector("[data-int-enabled]");
     const statusSel = row.querySelector("[data-int-status]");
     const noteIn = row.querySelector("[data-int-note]");
     if (!statusSel) continue;
+    if (enabled && !enabled.checked) continue;
     const status = statusSel.value;
     const note = (noteIn?.value || "").trim();
     if (!status) continue;
@@ -2129,6 +2205,9 @@ function collectInterventionsFromPicker(patientId, visitId) {
       interventionId: makeInterventionId(visitId, idx++),
       patientId,
       visitId,
+      catalogItemId: row.dataset.catalogItemId || null,
+      interventionLevel: safeNum(row.dataset.level) || null,
+      actionIntensity: row.dataset.actionIntensity || null,
       cmoDimension: row.dataset.dim,
       type: "CMO",
       description: row.dataset.desc,
@@ -2143,6 +2222,23 @@ function collectInterventionsFromPicker(patientId, visitId) {
 
 // ---------------- Visit form ----------------
 
+function getSelectedInterventionLevel() {
+  const lvl = safeNum($("#v_interventionLevel")?.value);
+  return [1, 2, 3].includes(lvl) ? lvl : 3;
+}
+
+function updateInterventionLevelHint() {
+  const lvl = getSelectedInterventionLevel();
+  const hint = $("#v_interventionLevelHint");
+  if (!hint) return;
+  const map = {
+    1: "Nivel 1 · intensive actions",
+    2: "Nivel 2 · intermediate actions",
+    3: "Nivel 3 · basal actions",
+  };
+  hint.textContent = map[lvl] || map[3];
+}
+
 function resetVisitForm(defaults = {}) {
   $("#v_date").value = todayISO();
   $("#v_hospDrug").value = "—";
@@ -2156,8 +2252,10 @@ function resetVisitForm(defaults = {}) {
   $("#v_oft").value = "";
   $("#v_follow").value = "";
   $("#v_hcText").value = "";
+  $("#v_interventionLevel").value = String(defaults.priorityLevel || 3);
 
-  buildInterventionsPicker();
+  updateInterventionLevelHint();
+  buildInterventionsPicker(getSelectedInterventionLevel());
 
   if (defaults.hospitalDrug) $("#v_hospDrug").value = defaults.hospitalDrug;
   if (defaults.ldlTarget !== undefined && defaults.ldlTarget !== null) $("#v_ldlTarget").value = String(defaults.ldlTarget);
@@ -2192,6 +2290,7 @@ function generateHCText(patient, visit, interventions) {
   lines.push(`Adherencia: ${visit.adherence || "—"} · RAM: ${visit.ram || "—"}`);
 
   lines.push(`Estratificación: Score ${visit.cmoScore ?? "—"} · Nivel ${visit.priorityLevel ?? "—"} · ${visit.priorityJustification || "—"}`);
+  if (visit.interventionCatalogLevel) lines.push(`Catálogo intervención aplicado: Nivel ${visit.interventionCatalogLevel}`);
 
   if (visit.stratVars && Object.keys(visit.stratVars).length) {
     lines.push(`Variables estratificación (selección):`);
@@ -2210,7 +2309,9 @@ function generateHCText(patient, visit, interventions) {
   if (interventions.length) {
     lines.push(`Intervenciones CMO:`);
     for (const i of interventions) {
-      lines.push(`- ${i.cmoDimension}: ${i.description} [${i.status}]${i.outcomeNotes ? " — " + i.outcomeNotes : ""}`);
+      const levelSuffix = i.interventionLevel ? ` · L${i.interventionLevel}` : "";
+      const intensitySuffix = i.actionIntensity ? ` · ${i.actionIntensity}` : "";
+      lines.push(`- ${i.cmoDimension}: ${i.description}${levelSuffix}${intensitySuffix} [${i.status}]${i.outcomeNotes ? " — " + i.outcomeNotes : ""}`);
     }
   } else {
     lines.push(`Intervenciones CMO: —`);
@@ -2241,6 +2342,7 @@ function generateHCFromForm() {
     stratVars,
     cmoScore: score,
     priorityLevel: lvl,
+    interventionCatalogLevel: getSelectedInterventionLevel(),
     priorityJustification: cleanOptionalText($("#v_levelWhy").value),
     oftObjectives: cleanOptionalText($("#v_oft").value),
     followUpPlan: cleanOptionalText($("#v_follow").value),
@@ -2304,6 +2406,7 @@ async function saveVisit() {
     stratVars,
     cmoScore: score,
     priorityLevel,
+    interventionCatalogLevel: getSelectedInterventionLevel(),
     priorityJustification: cleanOptionalText($("#v_levelWhy").value),
 
     oftObjectives: cleanOptionalText($("#v_oft").value),
@@ -2469,6 +2572,7 @@ function visitsForCSV() {
     ram: v.ram ?? "",
     cmoScore: v.cmoScore ?? "",
     priorityLevel: v.priorityLevel ?? "",
+    interventionCatalogLevel: v.interventionCatalogLevel ?? "",
     priorityJustification: v.priorityJustification ?? "",
     oftObjectives: v.oftObjectives ?? "",
     followUpPlan: v.followUpPlan ?? "",
@@ -2484,6 +2588,9 @@ function interventionsForCSV() {
     patientId: i.patientId,
     visitId: i.visitId,
     type: i.type ?? "",
+    catalogItemId: i.catalogItemId ?? "",
+    interventionLevel: i.interventionLevel ?? "",
+    actionIntensity: i.actionIntensity ?? "",
     cmoDimension: i.cmoDimension ?? "",
     description: i.description ?? "",
     status: i.status ?? "",
@@ -2534,7 +2641,7 @@ function downloadVisitsTemplate() {
     date: "2026-02-20", hospitalDrug: "Evolocumab 140 mg",
     ldl: "55", ldlTarget: "55", ldlGoalAchieved: "true",
     treatment: "PCSK9 + estatina + ezetimiba", adherence: "Buena", ram: "",
-    cmoScore: "18", priorityLevel: "2",
+    cmoScore: "18", priorityLevel: "2", interventionCatalogLevel: "2",
     priorityJustification: "No objetivo + baja adherencia",
     oftObjectives: "Reducir LDL <55 mg/dL", followUpPlan: "Revisión 3 meses",
     stratVars_json: "", createdAt: "", schemaVersion: "",
@@ -2548,7 +2655,7 @@ function downloadInterventionsTemplate() {
   const example = {
     interventionId: "I-V-PCSK9-000001-2026-02-20-0-def456",
     patientId: "PCSK9-000001", visitId: "V-PCSK9-000001-2026-02-20-abc123",
-    type: "CMO", cmoDimension: "Capacidad",
+    type: "CMO", catalogItemId: "cap_treatment_education_intensive", interventionLevel: "1", actionIntensity: "intensive", cmoDimension: "Capacidad",
     description: "Educación sobre tratamiento",
     status: "accepted", outcomeNotes: "Paciente refiere comprensión correcta",
     createdAt: "", schemaVersion: "",
@@ -2734,6 +2841,7 @@ async function prepareImportVisitsCSV(file) {
       ram:                   rec.ram || null,
       cmoScore:              rec.cmoScore ? safeNum(rec.cmoScore) : 0,
       priorityLevel:         rec.priorityLevel ? safeNum(rec.priorityLevel) : 3,
+      interventionCatalogLevel: rec.interventionCatalogLevel ? safeNum(rec.interventionCatalogLevel) : null,
       priorityJustification: rec.priorityJustification || null,
       oftObjectives:         rec.oftObjectives || null,
       followUpPlan:          rec.followUpPlan || null,
@@ -2748,6 +2856,7 @@ async function prepareImportVisitsCSV(file) {
 
 async function prepareImportInterventionsCSV(file) {
   devLog("[IMPORT] prepareImportInterventionsCSV →", file.name, file.size, "bytes");
+  ensureInterventionCatalogIndexes();
   let rawText;
   try { rawText = await readFileAsText(file); }
   catch (err) {
@@ -2762,18 +2871,27 @@ async function prepareImportInterventionsCSV(file) {
     ...APP.state.visits.map((v) => v.visitId),
     ...(APP.state.csvPending.visits || []).map((v) => v.visitId),
   ]);
-  const buildRow = (rec) => ({
-    interventionId: rec.interventionId,
-    patientId:      rec.patientId,
-    visitId:        rec.visitId,
-    type:           rec.type || "CMO",
-    cmoDimension:   rec.cmoDimension,
-    description:    rec.description,
-    status:         rec.status,
-    outcomeNotes:   rec.outcomeNotes || null,
-    createdAt:      rec.createdAt || new Date().toISOString(),
-    schemaVersion:  APP.schemaVersion,
-  });
+  const buildRow = (rec) => {
+    const resolvedCatalogItem =
+      (rec.catalogItemId && APP.state.interventionCatalogByKey[rec.catalogItemId]) ||
+      APP.interventionLevelCatalog.find((item) => item.cmoDimension === rec.cmoDimension && item.title === rec.description) ||
+      null;
+    return {
+      interventionId: rec.interventionId,
+      patientId:      rec.patientId,
+      visitId:        rec.visitId,
+      type:           rec.type || "CMO",
+      catalogItemId:  rec.catalogItemId || resolvedCatalogItem?.interventionKey || null,
+      interventionLevel: rec.interventionLevel ? safeNum(rec.interventionLevel) : (resolvedCatalogItem?.level || null),
+      actionIntensity: rec.actionIntensity || resolvedCatalogItem?.defaultActionIntensity || null,
+      cmoDimension:   rec.cmoDimension || resolvedCatalogItem?.cmoDimension || "",
+      description:    rec.description || resolvedCatalogItem?.title || "",
+      status:         rec.status,
+      outcomeNotes:   rec.outcomeNotes || null,
+      createdAt:      rec.createdAt || new Date().toISOString(),
+      schemaVersion:  APP.schemaVersion,
+    };
+  };
   _parseCsvAndPreview("interventions", rawText, CSV_SCHEMA.interventions, buildRow, knownPatIds, knownVisIds);
 }
 
@@ -2965,6 +3083,10 @@ function bindPatientsUI() {
 
   $("#btnGenerateHC").addEventListener("click", generateHCFromForm);
   $("#btnCopyHC").addEventListener("click", copyHC);
+  $("#v_interventionLevel").addEventListener("change", () => {
+    updateInterventionLevelHint();
+    buildInterventionsPicker(getSelectedInterventionLevel());
+  });
 
   // no-op hooks (por si luego quieres lógica automática)
   ["#v_ldl", "#v_ldlTarget", "#v_goalAch", "#v_hospDrug"].forEach((sel) => {
@@ -3200,6 +3322,7 @@ function initDebugPanel() {
 // ---------------- Init ----------------
 
 async function init() {
+  ensureInterventionCatalogIndexes();
   APP.state.db = await openDB();
   await loadAll();
   fillConditionSelectors();

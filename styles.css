@@ -449,6 +449,18 @@ label{font-size:12px; color: var(--muted); font-weight:800}
   gap:10px;
   align-items:center;
 }
+.intervLabel{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+}
+.intervLabel input[type="checkbox"]{
+  width:16px;
+  height:16px;
+}
 .chips{display:flex; flex-wrap:wrap; gap:8px}
 .chip{
   padding: 6px 10px;
