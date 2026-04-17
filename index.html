@@ -733,6 +733,19 @@
           </div>
           <div class="modalBody">
             <div class="smallMuted" id="visitForPatient">—</div>
+            <div class="visitQuickBar">
+              <label class="checkRow">
+                <input id="v_quickMode" type="checkbox" checked />
+                <span>Seguimiento estándar rápido (recomendado)</span>
+              </label>
+              <div class="quickActions" role="group" aria-label="Acciones rápidas">
+                <button type="button" class="btn ghost btnTiny" id="btnQuickNoIssues">Sin incidencias</button>
+                <button type="button" class="btn ghost btnTiny" id="btnQuickGenerateSave">Generar HC + Guardar</button>
+              </div>
+              <div class="smallMuted">
+                Atajos teclado: <span class="kbd">Alt+S</span> Guardar · <span class="kbd">Alt+H</span> Generar HC · <span class="kbd">Alt+1</span>/<span class="kbd">Alt+2</span>/<span class="kbd">Alt+3</span> LDL/Objetivo/Plan.
+              </div>
+            </div>
 
             <div class="formGrid">
               <div class="field">

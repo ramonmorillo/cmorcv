@@ -2178,6 +2178,63 @@ function getDefaultsFromLastVisit(patientId) {
   };
 }
 
+function autoResolveGoalAchieved() {
+  const goalSel = $("#v_goalAch");
+  if (!goalSel || goalSel.value) return;
+  const ldl = safeNum($("#v_ldl").value);
+  const target = safeNum($("#v_ldlTarget").value);
+  if (!Number.isFinite(ldl) || !Number.isFinite(target)) return;
+  goalSel.value = ldl <= target ? "true" : "false";
+}
+
+function applyQuickNoIssues() {
+  $("#v_adherence").value = "Buena";
+  $("#v_ram").value = "No";
+  $("#v_levelWhy").value = "Seguimiento estándar sin incidencias clínicas relevantes.";
+  if (!$("#v_follow").value) $("#v_follow").value = "Mantener tratamiento y revisión en próxima consulta programada.";
+  autoResolveGoalAchieved();
+  toast("Plantilla rápida aplicada.");
+}
+
+function focusVisitFieldShortcut(key) {
+  const map = {
+    "1": "#v_ldl",
+    "2": "#v_ldlTarget",
+    "3": "#v_follow",
+  };
+  const target = map[key];
+  if (!target) return;
+  const el = $(target);
+  if (!el) return;
+  el.focus();
+  if (typeof el.select === "function") el.select();
+}
+
+async function generateAndSaveVisit() {
+  generateHCFromForm();
+  await saveVisit();
+}
+
+function handleVisitModalShortcuts(ev) {
+  if ($("#modalVisit").classList.contains("hidden")) return;
+  if (!ev.altKey) return;
+  const key = String(ev.key || "").toLowerCase();
+  if (key === "s") {
+    ev.preventDefault();
+    saveVisit();
+    return;
+  }
+  if (key === "h") {
+    ev.preventDefault();
+    generateHCFromForm();
+    return;
+  }
+  if (["1", "2", "3"].includes(key)) {
+    ev.preventDefault();
+    focusVisitFieldShortcut(key);
+  }
+}
+
 function generateHCText(patient, visit, interventions) {
   const lines = [];
   lines.push(`Paciente ${patient.patientId} · Patología prevalente: ${patient.prevalentCondition || "—"}`);
@@ -2223,6 +2280,7 @@ function generateHCFromForm() {
   if (!patientId) return toast("Selecciona un paciente.");
   const patient = APP.state.patients.find((p) => p.patientId === patientId);
   if (!patient) return toast("Paciente no encontrado.");
+  if ($("#v_quickMode")?.checked) autoResolveGoalAchieved();
 
   const stratVars = getStratSelections();
   const score = computeStratScore(stratVars);
@@ -2272,6 +2330,7 @@ async function saveVisit() {
 
   const date = $("#v_date").value;
   if (!date) return toast("Fecha obligatoria.");
+  if ($("#v_quickMode")?.checked) autoResolveGoalAchieved();
 
   const patient = APP.state.patients.find((p) => p.patientId === patientId);
   if (!patient?.id) {
@@ -2957,19 +3016,27 @@ function bindPatientsUI() {
     if (!APP.state.selectedPatientId) return toast("Selecciona un paciente.");
     const defaults = getDefaultsFromLastVisit(APP.state.selectedPatientId);
     resetVisitForm(defaults);
+    $("#v_quickMode").checked = true;
     $("#visitForPatient").textContent = `Paciente: ${APP.state.selectedPatientId} (variables precargadas de última visita si existe)`;
     openModal("modalVisit");
+    setTimeout(() => $("#v_ldl")?.focus(), 0);
   });
 
   $("#btnSaveVisit").addEventListener("click", saveVisit);
 
   $("#btnGenerateHC").addEventListener("click", generateHCFromForm);
   $("#btnCopyHC").addEventListener("click", copyHC);
+  $("#btnQuickNoIssues").addEventListener("click", applyQuickNoIssues);
+  $("#btnQuickGenerateSave").addEventListener("click", generateAndSaveVisit);
 
-  // no-op hooks (por si luego quieres lógica automática)
-  ["#v_ldl", "#v_ldlTarget", "#v_goalAch", "#v_hospDrug"].forEach((sel) => {
+  document.addEventListener("keydown", handleVisitModalShortcuts);
+
+  ["#v_ldl", "#v_ldlTarget"].forEach((sel) => {
     const el = $(sel);
-    if (el) el.addEventListener("change", () => {});
+    if (el) {
+      el.addEventListener("change", autoResolveGoalAchieved);
+      el.addEventListener("blur", autoResolveGoalAchieved);
+    }
   });
 }
 
