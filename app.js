@@ -4,7 +4,7 @@
    Versión Supabase — GitHub Pages friendly
 */
 
-const APP_VERSION = "20260409_1200";
+const APP_VERSION = "20260417_0001";
 const IS_DEV = typeof window !== "undefined" &&
   (location.hostname === "localhost" || location.hostname === "127.0.0.1" ||
    new URLSearchParams(location.search).has("debug"));
@@ -44,11 +44,13 @@ const APP = {
     "Inclisiran 284 mg",
   ],
 
-  // Cortes fijos para nivel/prioridad
+  // CMO oficial (cmorcvtesis): 0-26 => Nivel 3, 27-36 => Nivel 2, >=37 => Nivel 1
   cutoffs: {
-    level1: 23,
-    level2: 17,
+    level1: 37,
+    level2: 27,
   },
+
+  scoringEngineVersion: "cmorcvtesis-v1",
 
   // ===== Estratificación: variables + puntos (según tu copia-pega) =====
   stratificationModel: [
@@ -963,24 +965,47 @@ function fmtDate(d) {
   return d;
 }
 
-function levelFromScore(score) {
+function fallbackLevelFromScore(score) {
   const s = Number(score || 0);
   if (s >= APP.cutoffs.level1) return 1;
   if (s >= APP.cutoffs.level2) return 2;
   return 3;
 }
 
-function levelFromScoreWithOverrides(score, selections) {
-  // Overrides (ej: embarazo prioridad 1)
-  for (const v of APP.stratificationModel) {
-    if (!v.overrides) continue;
-    const chosen = selections?.[v.id];
-    if (chosen === undefined) continue;
-    if (String(chosen) === String(v.overrides.ifValue)) {
-      return v.overrides.level; // e.g., 1
-    }
+function fallbackLabelFromLevel(level) {
+  if (level === 1) return "Level 1 Priority";
+  if (level === 2) return "Level 2 Intermediate";
+  return "Level 3 Basal";
+}
+
+function getScoringEngine() {
+  const scoringApi = window.CMOScoring;
+  if (!scoringApi?.createCmoScoringEngine) return null;
+  if (!APP._scoringEngine) {
+    APP._scoringEngine = scoringApi.createCmoScoringEngine({
+      version: APP.scoringEngineVersion,
+      variableDefinitions: APP.stratificationModel,
+      thresholds: scoringApi.defaultThresholds,
+    });
   }
-  return levelFromScore(score);
+  return APP._scoringEngine;
+}
+
+function evaluateStratification(selections) {
+  const scoringEngine = getScoringEngine();
+  if (scoringEngine) return scoringEngine.evaluate(selections || {});
+
+  const score = computeStratScoreLegacy(selections || {});
+  const level = fallbackLevelFromScore(score);
+  return {
+    version: APP.scoringEngineVersion,
+    score,
+    level,
+    label: fallbackLabelFromLevel(level),
+    matchedVariables: [],
+    breakdown: [],
+    explanation: `CMO ${APP.scoringEngineVersion}: score ${score} => ${fallbackLabelFromLevel(level)}.`,
+  };
 }
 
 // ---------------- UI: Navigation ----------------
@@ -1905,8 +1930,9 @@ async function savePatient() {
   }
 
   const stratVars = getStratSelections();
-  const score = computeStratScore(stratVars);
-  const priorityLevel = levelFromScoreWithOverrides(score, stratVars);
+  const stratification = evaluateStratification(stratVars);
+  const score = stratification.score;
+  const priorityLevel = stratification.level;
 
   const p = {
     patientId,
@@ -2047,7 +2073,7 @@ function getStratSelections() {
   return out;
 }
 
-function computeStratScore(selections) {
+function computeStratScoreLegacy(selections) {
   let total = 0;
   for (const v of APP.stratificationModel) {
     const chosen = selections[v.id];
@@ -2056,6 +2082,10 @@ function computeStratScore(selections) {
     if (opt) total += Number(opt.points || 0);
   }
   return total;
+}
+
+function computeStratScore(selections) {
+  return evaluateStratification(selections).score;
 }
 
 function updateStratScoreUI() {
@@ -2076,9 +2106,9 @@ function updateStratScoreUI() {
 
 function autoFillLevelFromScore() {
   const selections = getStratSelections();
-  const score = safeNum($("#p_score").value) ?? 0;
-  const lvl = levelFromScoreWithOverrides(score, selections);
-  $("#p_levelAuto").value = `Nivel ${lvl}`;
+  const stratification = evaluateStratification(selections);
+  $("#p_score").value = String(stratification.score);
+  $("#p_levelAuto").value = `Nivel ${stratification.level} · ${stratification.label}`;
 }
 
 // ---------------- Interventions UI ----------------
@@ -2225,8 +2255,9 @@ function generateHCFromForm() {
   if (!patient) return toast("Paciente no encontrado.");
 
   const stratVars = getStratSelections();
-  const score = computeStratScore(stratVars);
-  const lvl = levelFromScoreWithOverrides(score, stratVars);
+  const stratification = evaluateStratification(stratVars);
+  const score = stratification.score;
+  const lvl = stratification.level;
 
   const visit = {
     date: $("#v_date").value || "—",
@@ -2241,7 +2272,7 @@ function generateHCFromForm() {
     stratVars,
     cmoScore: score,
     priorityLevel: lvl,
-    priorityJustification: cleanOptionalText($("#v_levelWhy").value),
+    priorityJustification: cleanOptionalText($("#v_levelWhy").value) || stratification.explanation,
     oftObjectives: cleanOptionalText($("#v_oft").value),
     followUpPlan: cleanOptionalText($("#v_follow").value),
   };
@@ -2279,8 +2310,9 @@ async function saveVisit() {
     return alert("No se encontró el UUID real del paciente. Recarga y vuelve a intentarlo.");
   }
   const stratVars = getStratSelections();
-  const score = computeStratScore(stratVars);
-  const priorityLevel = levelFromScoreWithOverrides(score, stratVars);
+  const stratification = evaluateStratification(stratVars);
+  const score = stratification.score;
+  const priorityLevel = stratification.level;
 
   const ldl = safeNum($("#v_ldl").value);
   const ldlTarget = safeNum($("#v_ldlTarget").value);
@@ -2304,7 +2336,7 @@ async function saveVisit() {
     stratVars,
     cmoScore: score,
     priorityLevel,
-    priorityJustification: cleanOptionalText($("#v_levelWhy").value),
+    priorityJustification: cleanOptionalText($("#v_levelWhy").value) || stratification.explanation,
 
     oftObjectives: cleanOptionalText($("#v_oft").value),
     followUpPlan: cleanOptionalText($("#v_follow").value),

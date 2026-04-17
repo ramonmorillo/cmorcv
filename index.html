@@ -200,7 +200,7 @@
                       <div class="miniCard">
                         <div class="miniLabel">Score actual</div>
                         <div class="miniValue" id="d_scoreNow">—</div>
-                        <div class="miniHint">Cortes: ≥23→N1; ≥17→N2</div>
+                        <div class="miniHint">CMO oficial: 37+→N1; 27–36→N2; 0–26→N3</div>
                       </div>
                       <div class="miniCard">
                         <div class="miniLabel">LDL último</div>
@@ -853,6 +853,7 @@
     window.supabase = createClient(supabaseUrl, supabaseKey);
     window.dispatchEvent(new Event('supabaseReady'));
   </script>
-  <script src="./app.js?v=20260409_1200"></script>
+  <script type="module" src="./scoring/cmoScoring.js?v=20260417_0001"></script>
+  <script src="./app.js?v=20260417_0001"></script>
 </body>
 </html>
