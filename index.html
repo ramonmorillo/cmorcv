@@ -271,6 +271,50 @@
           </div>
         </div>
 
+        <!-- Row 1b: Data quality alerts (admin) -->
+        <div class="panel" style="margin-bottom:14px">
+          <div class="panelHeader">
+            <div class="panelTitle">Alertas de calidad de datos (admin)</div>
+            <div class="smallMuted" id="dash_dqScope">Validación automática del registro</div>
+          </div>
+          <div class="dashRow dashRow5" style="margin-bottom:12px">
+            <div class="miniCard">
+              <div class="miniLabel">Variables obligatorias ausentes</div>
+              <div class="miniValue" id="dq_missingMandatory">0</div>
+            </div>
+            <div class="miniCard">
+              <div class="miniLabel">Valores imposibles</div>
+              <div class="miniValue" id="dq_impossibleValues">0</div>
+            </div>
+            <div class="miniCard">
+              <div class="miniLabel">Visitas perdidas</div>
+              <div class="miniValue" id="dq_missedVisits">0</div>
+            </div>
+            <div class="miniCard">
+              <div class="miniLabel">Registros duplicados</div>
+              <div class="miniValue" id="dq_duplicateRecords">0</div>
+            </div>
+            <div class="miniCard">
+              <div class="miniLabel">Inconsistencias de score</div>
+              <div class="miniValue" id="dq_scoreInconsistencies">0</div>
+            </div>
+          </div>
+          <div class="tableWrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Tipo</th>
+                  <th>Severidad</th>
+                  <th>Paciente</th>
+                  <th>Visita</th>
+                  <th>Detalle</th>
+                </tr>
+              </thead>
+              <tbody id="dq_alertsBody"></tbody>
+            </table>
+          </div>
+        </div>
+
         <!-- Row 2: Visual charts -->
         <div class="grid grid3">
           <div class="card">

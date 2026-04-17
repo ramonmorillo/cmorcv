@@ -983,6 +983,193 @@ function levelFromScoreWithOverrides(score, selections) {
   return levelFromScore(score);
 }
 
+function toIsoDateOrNull(dateLike) {
+  if (!dateLike) return null;
+  if (typeof dateLike === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dateLike)) return dateLike;
+  const parsed = parseFlexDate(String(dateLike));
+  return parsed || null;
+}
+
+function daysFromToday(isoDate) {
+  const parsed = toIsoDateOrNull(isoDate);
+  if (!parsed) return null;
+  const d = new Date(`${parsed}T00:00:00Z`);
+  if (!Number.isFinite(d.getTime())) return null;
+  const now = new Date();
+  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const target = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  return Math.floor((today - target) / (1000 * 60 * 60 * 24));
+}
+
+function isCurrentUserAdmin() {
+  const role = String(APP.state.myProfile?.role || APP.state.myProfile?.user_role || "").toLowerCase();
+  return role.includes("admin");
+}
+
+function buildDataQualityAlerts() {
+  const alerts = [];
+  const counts = {
+    missingMandatory: 0,
+    impossibleValues: 0,
+    missedVisits: 0,
+    duplicateRecords: 0,
+    scoreInconsistencies: 0,
+  };
+  const maxAlerts = 250;
+  const addAlert = (type, severity, patientId, visitId, message) => {
+    counts[type] = (counts[type] || 0) + 1;
+    if (alerts.length < maxAlerts) alerts.push({ type, severity, patientId, visitId, message });
+  };
+
+  const currentYear = new Date().getUTCFullYear();
+  const mandatoryStratVars = APP.stratificationModel.map((v) => v.id);
+
+  for (const p of APP.state.patients) {
+    if (p.birthYear != null) {
+      const y = Number(p.birthYear);
+      if (!Number.isFinite(y) || y < 1900 || y > currentYear) {
+        addAlert("impossibleValues", "high", p.patientId, null, `Año de nacimiento imposible: ${p.birthYear}.`);
+      }
+    }
+  }
+
+  const dupVisitId = new Map();
+  const dupPatientDate = new Map();
+  for (const v of APP.state.visits) {
+    dupVisitId.set(v.visitId, (dupVisitId.get(v.visitId) || 0) + 1);
+    const byPidDate = `${v.patientId}::${v.date || "NO_DATE"}`;
+    dupPatientDate.set(byPidDate, (dupPatientDate.get(byPidDate) || 0) + 1);
+
+    const missingFields = [];
+    if (!String(v.visitId || "").trim()) missingFields.push("visitId");
+    if (!String(v.patientId || "").trim()) missingFields.push("patientId");
+    if (!toIsoDateOrNull(v.date)) missingFields.push("date");
+    const stratVars = (v.stratVars && typeof v.stratVars === "object") ? v.stratVars : {};
+    const missingStrat = mandatoryStratVars.filter((id) => stratVars[id] === undefined || stratVars[id] === null || stratVars[id] === "");
+    if (missingStrat.length) {
+      missingFields.push(`stratVars(${missingStrat.length})`);
+    }
+    if (missingFields.length) {
+      addAlert("missingMandatory", "high", v.patientId || "—", v.visitId || "—", `Campos obligatorios ausentes: ${missingFields.join(", ")}.`);
+    }
+
+    const days = daysFromToday(v.date);
+    if (days !== null && days < 0) {
+      addAlert("impossibleValues", "high", v.patientId || "—", v.visitId || "—", `Fecha de visita futura: ${v.date}.`);
+    }
+    const ldl = safeNum(v.ldl);
+    const ldlTarget = safeNum(v.ldlTarget);
+    if (ldl !== null && (ldl < 0 || ldl > 500)) {
+      addAlert("impossibleValues", "high", v.patientId || "—", v.visitId || "—", `LDL fuera de rango clínico: ${ldl}.`);
+    }
+    if (ldlTarget !== null && (ldlTarget < 0 || ldlTarget > 500)) {
+      addAlert("impossibleValues", "high", v.patientId || "—", v.visitId || "—", `Objetivo LDL fuera de rango clínico: ${ldlTarget}.`);
+    }
+    if (v.priorityLevel != null && ![1, 2, 3].includes(Number(v.priorityLevel))) {
+      addAlert("impossibleValues", "high", v.patientId || "—", v.visitId || "—", `Nivel de prioridad inválido: ${v.priorityLevel}.`);
+    }
+
+    if (Object.keys(stratVars).length) {
+      const computedScore = computeStratScore(stratVars);
+      const computedLevel = levelFromScoreWithOverrides(computedScore, stratVars);
+      const storedScore = safeNum(v.cmoScore);
+      const storedLevel = safeNum(v.priorityLevel);
+
+      if (storedScore !== null && storedScore !== computedScore) {
+        addAlert(
+          "scoreInconsistencies",
+          "high",
+          v.patientId || "—",
+          v.visitId || "—",
+          `Score guardado (${storedScore}) ≠ score calculado (${computedScore}).`
+        );
+      }
+      if (storedLevel !== null && storedLevel !== computedLevel) {
+        addAlert(
+          "scoreInconsistencies",
+          "high",
+          v.patientId || "—",
+          v.visitId || "—",
+          `Nivel guardado (${storedLevel}) ≠ nivel calculado (${computedLevel}).`
+        );
+      }
+    }
+  }
+
+  for (const [visitId, count] of dupVisitId.entries()) {
+    if (count > 1) addAlert("duplicateRecords", "high", "—", visitId, `visitId duplicado (${count} registros).`);
+  }
+  for (const [key, count] of dupPatientDate.entries()) {
+    if (count <= 1) continue;
+    const [patientId, date] = key.split("::");
+    addAlert("duplicateRecords", "high", patientId, null, `Múltiples visitas para la misma fecha (${date}) con ${count} registros.`);
+  }
+
+  const overdueDaysByLevel = { 1: 90, 2: 180, 3: 365 };
+  for (const p of APP.state.patients.filter((x) => x.status !== "inactive")) {
+    const last = patientLastVisit(p.patientId);
+    if (!last) {
+      addAlert("missedVisits", "warn", p.patientId, null, "Paciente activo sin visitas registradas.");
+      continue;
+    }
+    const lvl = Number(last.priorityLevel || p.priorityLevel || 3);
+    const maxDays = overdueDaysByLevel[lvl] || overdueDaysByLevel[3];
+    const daysSince = daysFromToday(last.date);
+    if (daysSince !== null && daysSince > maxDays) {
+      addAlert(
+        "missedVisits",
+        "warn",
+        p.patientId,
+        last.visitId || null,
+        `Última visita hace ${daysSince} días (Nivel ${lvl}, recomendado ≤ ${maxDays} días).`
+      );
+    }
+  }
+
+  return { counts, alerts, total: Object.values(counts).reduce((acc, n) => acc + n, 0) };
+}
+
+function renderDataQualityAlerts() {
+  const { counts, alerts, total } = buildDataQualityAlerts();
+  const roleLabel = isCurrentUserAdmin() ? "Vista admin" : "Vista de solo lectura";
+  $("#dash_dqScope").textContent = `${roleLabel} · ${total} alerta(s) detectada(s)`;
+  $("#dq_missingMandatory").textContent = String(counts.missingMandatory || 0);
+  $("#dq_impossibleValues").textContent = String(counts.impossibleValues || 0);
+  $("#dq_missedVisits").textContent = String(counts.missedVisits || 0);
+  $("#dq_duplicateRecords").textContent = String(counts.duplicateRecords || 0);
+  $("#dq_scoreInconsistencies").textContent = String(counts.scoreInconsistencies || 0);
+
+  const typeLabel = {
+    missingMandatory: "Variables obligatorias ausentes",
+    impossibleValues: "Valores imposibles",
+    missedVisits: "Visitas perdidas",
+    duplicateRecords: "Registros duplicados",
+    scoreInconsistencies: "Inconsistencias de score",
+  };
+  const tbody = $("#dq_alertsBody");
+  tbody.innerHTML = "";
+
+  if (!alerts.length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td colspan="5"><span class="chip ok">Sin alertas</span></td>`;
+    tbody.appendChild(tr);
+    return;
+  }
+
+  for (const a of alerts) {
+    const sevClass = a.severity === "high" ? "no" : "warn";
+    const sevLabel = a.severity === "high" ? "Alta" : "Media";
+    const tr = document.createElement("tr");
+    tr.innerHTML =
+      `<td>${esc(typeLabel[a.type] || a.type)}</td>` +
+      `<td><span class="chip ${sevClass}">${sevLabel}</span></td>` +
+      `<td>${esc(a.patientId || "—")}</td>` +
+      `<td>${esc(a.visitId || "—")}</td>` +
+      `<td>${esc(a.message || "—")}</td>`;
+    tbody.appendChild(tr);
+  }
+}
+
 // ---------------- UI: Navigation ----------------
 
 function setView(viewId) {
@@ -1371,6 +1558,7 @@ function renderDashboard() {
     : "";
   $("#dash_pendingIV").textContent = String(pendingIV.length);
   $("#dash_pendingIVHint").textContent = pendingIV.length === 1 ? "intervencion" : "intervenciones";
+  renderDataQualityAlerts();
 
   // === Chart: LDL Goal donut ===
   const goalNd = withVisits.length - goalYes.length - goalNo.length;
