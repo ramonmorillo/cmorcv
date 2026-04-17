@@ -224,6 +224,7 @@
                     <thead>
                       <tr>
                         <th>Fecha</th>
+                        <th>Tipo</th>
                         <th>Fármaco hospitalario</th>
                         <th>LDL</th>
                         <th>Objetivo</th>
@@ -736,8 +737,32 @@
 
             <div class="formGrid">
               <div class="field">
+                <label>Tipo de visita *</label>
+                <select class="select" id="v_visitType">
+                  <option value="baseline">baseline</option>
+                  <option value="month3">month3</option>
+                  <option value="month6">month6</option>
+                  <option value="month9">month9</option>
+                  <option value="month12">month12</option>
+                </select>
+              </div>
+
+              <div class="field">
                 <label>Fecha *</label>
                 <input class="input" id="v_date" type="date" />
+              </div>
+
+              <div class="field span2">
+                <label>Flujo longitudinal</label>
+                <div class="draftControls">
+                  <button class="btn ghost" id="btnSaveVisitDraft">💾 Guardar borrador</button>
+                  <button class="btn ghost" id="btnLoadVisitDraft">📥 Cargar borrador</button>
+                  <label class="checkboxLine">
+                    <input type="checkbox" id="v_autosave" />
+                    <span>Autosave de borrador</span>
+                  </label>
+                  <span class="smallMuted" id="v_draftStatus">Sin borrador local/supabase.</span>
+                </div>
               </div>
 
               <div class="field">
@@ -794,6 +819,27 @@
                 <textarea class="textarea" id="v_follow" rows="2"></textarea>
               </div>
 
+              <div class="field span2 visitTypePanel" data-visit-type-panel="baseline">
+                <label>Baseline: evaluación inicial *</label>
+                <textarea class="textarea" id="v_baselineEval" rows="2" placeholder="Riesgo basal, barreras iniciales, plan de arranque..."></textarea>
+              </div>
+              <div class="field span2 visitTypePanel hidden" data-visit-type-panel="month3">
+                <label>Mes 3: barreras de adherencia *</label>
+                <textarea class="textarea" id="v_m3AdherenceBarriers" rows="2" placeholder="Barreras detectadas y acciones propuestas..."></textarea>
+              </div>
+              <div class="field span2 visitTypePanel hidden" data-visit-type-panel="month6">
+                <label>Mes 6: revisión de laboratorio *</label>
+                <textarea class="textarea" id="v_m6LabReview" rows="2" placeholder="Resumen analítico y decisión farmacoterapéutica..."></textarea>
+              </div>
+              <div class="field span2 visitTypePanel hidden" data-visit-type-panel="month9">
+                <label>Mes 9: ajustes terapéuticos *</label>
+                <textarea class="textarea" id="v_m9TherapyAdjustments" rows="2" placeholder="Cambios realizados y respuesta clínica..."></textarea>
+              </div>
+              <div class="field span2 visitTypePanel hidden" data-visit-type-panel="month12">
+                <label>Mes 12: resumen anual *</label>
+                <textarea class="textarea" id="v_m12AnnualSummary" rows="2" placeholder="Resumen anual y cierre/replanificación..."></textarea>
+              </div>
+
               <div class="field span2">
                 <label>Intervenciones CMO (selecciona y define estado)</label>
                 <div class="interventionsWrap" id="interventionsPicker"></div>
@@ -812,7 +858,7 @@
 
           <div class="modalFooter">
             <button class="btn ghost" data-close="modalVisit">Cancelar</button>
-            <button class="btn" id="btnSaveVisit">Guardar visita</button>
+            <button class="btn" id="btnSaveVisit">Completar visita</button>
           </div>
         </div>
       </div>
