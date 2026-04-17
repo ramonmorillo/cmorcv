@@ -4,7 +4,7 @@
    Versión Supabase — GitHub Pages friendly
 */
 
-const APP_VERSION = "20260409_1200";
+const APP_VERSION = "20260417_1600";
 const IS_DEV = typeof window !== "undefined" &&
   (location.hostname === "localhost" || location.hostname === "127.0.0.1" ||
    new URLSearchParams(location.search).has("debug"));
@@ -333,6 +333,9 @@ const APP = {
     interventions: [],
     selectedPatientId: null,
     selectedVisitId: null,
+    patientListPage: 1,
+    patientListPageSize: 10,
+    patientProfileTab: "summary",
     // Pending CSV batches (set by prepare*, consumed by apply*)
     csvPending: { patients: null, visits: null, interventions: null },
     authSession: null,
@@ -488,6 +491,7 @@ function mapPatientRowToFrontend(row) {
     created_at: row.created_at ?? null,
     updated_at: row.updated_at ?? null,
     patientId: row.local_patient_code || "",
+    patientName: cleanOptionalText(row.patient_name || row.name),
     prevalentCondition: "",
     sex: row.sex || null,
     birthYear: row.birth_year ?? null,
@@ -817,6 +821,7 @@ function validateCSVImport(records, schemaFields) {
 const CSV_SCHEMA = {
   patients: [
     { key: "patientId",           required: true,  type: "string" },
+    { key: "patientName",         required: false, type: "string" },
     { key: "prevalentCondition",  required: true,  type: "string" },
     { key: "sex",                 required: false, type: "string" },
     { key: "birthYear",           required: false, type: "number" },
@@ -1599,7 +1604,7 @@ function matchesSearch(p, q) {
   const s = q.toLowerCase();
   const last = patientLastVisit(p.patientId);
   const lastLDL = last?.ldl ?? "";
-  return [p.patientId, p.prevalentCondition, p.sex, p.birthYear, p.notes, p.comorbidities, lastLDL].some((x) =>
+  return [p.patientId, p.patientName, p.prevalentCondition, p.sex, p.birthYear, p.notes, p.comorbidities, lastLDL].some((x) =>
     String(x ?? "").toLowerCase().includes(s)
   );
 }
@@ -1607,6 +1612,56 @@ function matchesSearch(p, q) {
 function matchesCondition(p, cond) {
   if (!cond) return true;
   return p.prevalentCondition === cond;
+}
+
+function normalizeSmokingStatus(patient, lastVisit) {
+  const value = String(lastVisit?.stratVars?.smoking_status || patient?.stratVars?.smoking_status || "");
+  if (value === "current") return "yes";
+  if (value === "former" || value === "never") return "no";
+  return "unknown";
+}
+
+function hasLowAdherence(patient, lastVisit) {
+  const stratValue = String(lastVisit?.stratVars?.adherence_status || patient?.stratVars?.adherence_status || "");
+  if (["risk", "nonadherent"].includes(stratValue)) return true;
+  const txt = String(lastVisit?.adherence || "").toLowerCase();
+  return ["baja", "irregular", "mala", "subópt", "subopt", "poor", "low"].some((tag) => txt.includes(tag));
+}
+
+function matchesLevel(lastVisit, level) {
+  if (!level) return true;
+  return String(lastVisit?.priorityLevel || "") === String(level);
+}
+
+function matchesStatus(patient, status) {
+  if (!status) return true;
+  if (status === "active") return patient.status !== "inactive";
+  if (status === "completed") return patient.status === "inactive";
+  return true;
+}
+
+function matchesSmoker(patient, lastVisit, smokerFilter) {
+  if (!smokerFilter) return true;
+  return normalizeSmokingStatus(patient, lastVisit) === smokerFilter;
+}
+
+function matchesAdherence(patient, lastVisit, adherenceFilter) {
+  if (!adherenceFilter) return true;
+  const low = hasLowAdherence(patient, lastVisit);
+  return adherenceFilter === "low" ? low : !low;
+}
+
+function paginateRows(rows, page, pageSize) {
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const safePage = Math.min(Math.max(1, page), totalPages);
+  const start = (safePage - 1) * pageSize;
+  return { rows: rows.slice(start, start + pageSize), safePage, totalPages, totalRows: rows.length };
+}
+
+function updatePatientsPagination(meta) {
+  $("#patientsPageInfo").textContent = `Página ${meta.safePage} de ${meta.totalPages} · ${meta.totalRows} pacientes`;
+  $("#patientsPrevPage").disabled = meta.safePage <= 1;
+  $("#patientsNextPage").disabled = meta.safePage >= meta.totalPages;
 }
 
 // ---------------- Tables ----------------
@@ -1617,17 +1672,26 @@ function renderPatientsTable() {
 
   const q = $("#patientSearch").value.trim();
   const cond = $("#conditionFilter").value;
+  const level = $("#levelFilter").value;
+  const status = $("#statusFilter").value;
+  const smoker = $("#smokerFilter").value;
+  const adherence = $("#adherenceFilter").value;
 
-  const rows = APP.state.patients
-    .filter((p) => matchesSearch(p, q))
-    .filter((p) => matchesCondition(p, cond))
-    .map((p) => {
-      const last = patientLastVisit(p.patientId);
-      return { p, last };
-    });
+  const filteredRows = APP.state.patients
+    .map((p) => ({ p, last: patientLastVisit(p.patientId) }))
+    .filter(({ p }) => matchesSearch(p, q))
+    .filter(({ p }) => matchesCondition(p, cond))
+    .filter(({ last }) => matchesLevel(last, level))
+    .filter(({ p }) => matchesStatus(p, status))
+    .filter(({ p, last }) => matchesSmoker(p, last, smoker))
+    .filter(({ p, last }) => matchesAdherence(p, last, adherence));
 
-  for (const { p, last } of rows) {
+  const pageMeta = paginateRows(filteredRows, APP.state.patientListPage, APP.state.patientListPageSize);
+  APP.state.patientListPage = pageMeta.safePage;
+
+  for (const { p, last } of pageMeta.rows) {
     const tr = document.createElement("tr");
+    tr.className = "clickableRow";
 
     const ldl = last?.ldl ?? "—";
     const tgt = last?.ldlTarget ?? "—";
@@ -1637,6 +1701,7 @@ function renderPatientsTable() {
 
     tr.innerHTML = `
       <td><span class="link" data-open-patient="${p.patientId}">${p.patientId}</span></td>
+      <td>${p.patientName || "—"}</td>
       <td>${p.prevalentCondition || "—"}</td>
       <td>${p.sex || "—"}</td>
       <td>${p.birthYear || "—"}</td>
@@ -1645,14 +1710,13 @@ function renderPatientsTable() {
       <td>${score}</td>
       <td>${ldl}</td>
       <td>${tgt}</td>
-      <td>${p.status === "inactive" ? "Inactivo" : "Activo"}</td>
+      <td>${p.status === "inactive" ? "Completado" : "Activo"}</td>
     `;
+    tr.addEventListener("click", () => openPatient(p.patientId));
     tbody.appendChild(tr);
   }
 
-  $$("[data-open-patient]").forEach((el) => {
-    el.addEventListener("click", () => openPatient(el.getAttribute("data-open-patient")));
-  });
+  updatePatientsPagination(pageMeta);
 }
 
 function openPatient(patientId) {
@@ -1666,6 +1730,7 @@ function openPatient(patientId) {
   if (!p) return;
 
   $("#d_patientId").textContent = p.patientId;
+  $("#d_name").textContent = p.patientName || "—";
   $("#d_condition").textContent = p.prevalentCondition || "—";
   $("#d_sex").textContent = p.sex || "—";
   $("#d_birthYear").textContent = p.birthYear || "—";
@@ -1685,13 +1750,65 @@ function openPatient(patientId) {
     goal === null ? "—" : `Objetivo ${goal} · ${ach === true ? "Cumple" : ach === false ? "No cumple" : "—"}`;
 
   renderVisitsTable(patientId);
+  renderPatientInterventionsTable(patientId);
+  renderPatientQuestionnaires(patientId);
   drawLDLChart(patientId);
+  setPatientProfileTab(APP.state.patientProfileTab || "summary");
 }
 
 function closePatient() {
   APP.state.selectedPatientId = null;
+  APP.state.patientProfileTab = "summary";
   $("#patientDetailCard").classList.add("hidden");
   $("#patientsTable").closest(".card").classList.remove("hidden");
+}
+
+function setPatientProfileTab(tabId) {
+  APP.state.patientProfileTab = tabId;
+  $$("[data-profile-tab]").forEach((btn) => {
+    btn.classList.toggle("active", btn.getAttribute("data-profile-tab") === tabId);
+  });
+  $$("[data-profile-panel]").forEach((panel) => {
+    panel.classList.toggle("hidden", panel.getAttribute("data-profile-panel") !== tabId);
+  });
+}
+
+function renderPatientInterventionsTable(patientId) {
+  const tbody = $("#patientInterventionsTable tbody");
+  tbody.innerHTML = "";
+  const rows = APP.state.interventions.filter((i) => i.patientId === patientId);
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="4" class="smallMuted">Sin intervenciones registradas.</td></tr>`;
+    return;
+  }
+  rows.sort((a, b) => (a.createdAt > b.createdAt ? -1 : 1));
+  for (const i of rows) {
+    const visit = APP.state.visits.find((v) => v.visitId === i.visitId);
+    const statusLabel = i.status === "accepted" ? "Aceptada" : i.status === "pending" ? "Pendiente" : "Rechazada";
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${visit?.date || "—"}</td>
+      <td>${i.cmoDimension || "—"}</td>
+      <td>${i.description || "—"}</td>
+      <td>${statusLabel}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+}
+
+function renderPatientQuestionnaires(patientId) {
+  const holder = $("#patientQuestionnaires");
+  const patient = APP.state.patients.find((p) => p.patientId === patientId);
+  const last = patientLastVisit(patientId);
+  const mergedVars = { ...(patient?.stratVars || {}), ...(last?.stratVars || {}) };
+  const entries = Object.entries(mergedVars);
+  if (!entries.length) {
+    holder.innerHTML = `<div class="k">Estado</div><div class="v">Sin cuestionarios/variables registradas.</div>`;
+    return;
+  }
+  holder.innerHTML = entries
+    .map(([k, v]) => `<div class="k">${esc(k)}</div><div class="v">${esc(String(v))}</div>`)
+    .join("");
 }
 
 function renderVisitsTable(patientId) {
@@ -1880,6 +1997,7 @@ function bindModalClose() {
 
 function resetPatientForm() {
   $("#p_patientId").value = "";
+  $("#p_name").value = "";
   $("#p_condition").value = "";
   $("#p_sex").value = "";
   $("#p_birthYear").value = "";
@@ -1910,6 +2028,7 @@ async function savePatient() {
 
   const p = {
     patientId,
+    patientName: cleanOptionalText($("#p_name").value),
     prevalentCondition,
     sex: $("#p_sex").value || null,
     birthYear: by,
@@ -2444,6 +2563,7 @@ async function deleteSelectedPatient() {
 function patientsForCSV() {
   return APP.state.patients.map((p) => ({
     patientId: p.patientId,
+    patientName: p.patientName ?? "",
     prevalentCondition: p.prevalentCondition ?? "",
     sex: p.sex ?? "",
     birthYear: p.birthYear ?? "",
@@ -2691,6 +2811,7 @@ async function prepareImportPatientsCSV(file) {
   }
   const buildRow = (rec) => ({
     patientId:          rec.patientId,
+    patientName:        rec.patientName || null,
     prevalentCondition: rec.prevalentCondition || "",
     sex:                rec.sex || null,
     birthYear:          rec.birthYear ? safeNum(rec.birthYear) : null,
@@ -2947,10 +3068,29 @@ function bindPatientsUI() {
 
   $("#btnSavePatient").addEventListener("click", savePatient);
 
-  $("#patientSearch").addEventListener("input", renderPatientsTable);
-  $("#conditionFilter").addEventListener("change", renderPatientsTable);
+  const rerenderPatientsFirstPage = () => {
+    APP.state.patientListPage = 1;
+    renderPatientsTable();
+  };
+  $("#patientSearch").addEventListener("input", rerenderPatientsFirstPage);
+  $("#conditionFilter").addEventListener("change", rerenderPatientsFirstPage);
+  $("#levelFilter").addEventListener("change", rerenderPatientsFirstPage);
+  $("#statusFilter").addEventListener("change", rerenderPatientsFirstPage);
+  $("#smokerFilter").addEventListener("change", rerenderPatientsFirstPage);
+  $("#adherenceFilter").addEventListener("change", rerenderPatientsFirstPage);
+  $("#patientsPrevPage").addEventListener("click", () => {
+    APP.state.patientListPage--;
+    renderPatientsTable();
+  });
+  $("#patientsNextPage").addEventListener("click", () => {
+    APP.state.patientListPage++;
+    renderPatientsTable();
+  });
 
   $("#btnBackToList").addEventListener("click", closePatient);
+  $$("[data-profile-tab]").forEach((btn) => {
+    btn.addEventListener("click", () => setPatientProfileTab(btn.getAttribute("data-profile-tab")));
+  });
   $("#btnDeletePatient").addEventListener("click", deleteSelectedPatient);
 
   $("#btnNewVisit").addEventListener("click", () => {
