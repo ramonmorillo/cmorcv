@@ -460,9 +460,19 @@ function renderAuthContext() {
 
 function toast(msg) {
   const el = $("#toast");
+  if (!el) return;
   el.textContent = msg;
   el.classList.remove("hidden");
-  setTimeout(() => el.classList.add("hidden"), 2600);
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => el.classList.add("hidden"), 2600);
+}
+
+function setGlobalLoading(isLoading) {
+  document.body.classList.toggle("is-loading", !!isLoading);
+  const main = document.querySelector(".main");
+  if (!main) return;
+  if (isLoading) main.setAttribute("aria-busy", "true");
+  else main.removeAttribute("aria-busy");
 }
 
 function esc(s) {
@@ -1577,6 +1587,10 @@ function renderInterventions(statusFilter) {
 
   const tbody = $("#iv_tbody");
   tbody.innerHTML = "";
+  if (!filtered.length) {
+    tbody.innerHTML = `<tr class="emptyRow"><td colspan="5">No hay intervenciones para los filtros seleccionados.</td></tr>`;
+    return;
+  }
   for (const i of filtered) {
     const visit = APP.state.visits.find((v) => v.visitId === i.visitId);
     const dateStr = visit ? visit.date : "—";
@@ -1625,6 +1639,15 @@ function renderPatientsTable() {
       const last = patientLastVisit(p.patientId);
       return { p, last };
     });
+
+  if (!rows.length) {
+    const emptyMessage =
+      APP.state.patients.length === 0
+        ? "Aún no hay pacientes registrados en este centro."
+        : "Sin resultados para esta búsqueda o filtro.";
+    tbody.innerHTML = `<tr class="emptyRow"><td colspan="10">${emptyMessage}</td></tr>`;
+    return;
+  }
 
   for (const { p, last } of rows) {
     const tr = document.createElement("tr");
@@ -1700,6 +1723,10 @@ function renderVisitsTable(patientId) {
 
   const visits = APP.state.visits.filter((v) => v.patientId === patientId);
   visits.sort((a, b) => (a.date > b.date ? -1 : 1));
+  if (!visits.length) {
+    tbody.innerHTML = `<tr class="emptyRow"><td colspan="11">Este paciente no tiene visitas registradas todavía.</td></tr>`;
+    return;
+  }
 
   for (const v of visits) {
     const tr = document.createElement("tr");
@@ -3200,23 +3227,28 @@ function initDebugPanel() {
 // ---------------- Init ----------------
 
 async function init() {
-  APP.state.db = await openDB();
-  await loadAll();
-  fillConditionSelectors();
-  fillHospitalDrugs();
-  updateStats();
-  renderPatientsTable();
+  setGlobalLoading(true);
+  try {
+    APP.state.db = await openDB();
+    await loadAll();
+    fillConditionSelectors();
+    fillHospitalDrugs();
+    updateStats();
+    renderPatientsTable();
 
-  bindNav();
-  bindModalClose();
-  bindPatientsUI();
-  bindExportUI();
-  bindVisitDetailUI();
-  initDebugPanel();
+    bindNav();
+    bindModalClose();
+    bindPatientsUI();
+    bindExportUI();
+    bindVisitDetailUI();
+    initDebugPanel();
 
-  setView("patientsView");
-  toast("Listo. Datos cargados desde Supabase.");
-  devLog("[INIT] app lista, versión", APP_VERSION);
+    setView("patientsView");
+    toast("Listo. Datos cargados desde Supabase.");
+    devLog("[INIT] app lista, versión", APP_VERSION);
+  } finally {
+    setGlobalLoading(false);
+  }
 }
 
 async function initAppOnce() {
@@ -3226,16 +3258,21 @@ async function initAppOnce() {
 }
 
 async function refreshDataAfterAuth() {
-  await loadMyProfile();
-  renderAuthContext();
-  if (!APP.state.appInitialized) {
-    await initAppOnce();
-    return;
+  setGlobalLoading(true);
+  try {
+    await loadMyProfile();
+    renderAuthContext();
+    if (!APP.state.appInitialized) {
+      await initAppOnce();
+      return;
+    }
+    await loadAll();
+    fillConditionSelectors();
+    updateStats();
+    renderPatientsTable();
+  } finally {
+    setGlobalLoading(false);
   }
-  await loadAll();
-  fillConditionSelectors();
-  updateStats();
-  renderPatientsTable();
 }
 
 function bindAuthUI() {
