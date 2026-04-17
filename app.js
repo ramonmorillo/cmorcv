@@ -4,7 +4,7 @@
    Versión Supabase — GitHub Pages friendly
 */
 
-const APP_VERSION = "20260409_1200";
+const APP_VERSION = "20260417_1500";
 const IS_DEV = typeof window !== "undefined" &&
   (location.hostname === "localhost" || location.hostname === "127.0.0.1" ||
    new URLSearchParams(location.search).has("debug"));
@@ -1989,62 +1989,167 @@ async function savePatient() {
 
 // ---------------- Stratification variables UI ----------------
 
-function buildStratVarsPicker(defaultValues = {}) {
-  const container = $("#stratVarsPicker");
-  container.innerHTML = "";
+const STRAT_GROUP_ORDER = ["Demográficas", "Clínicas", "Farmacoterapéuticas", "Sociosanitarias", "Otros"];
+const STRAT_GROUP_BY_ID = {
+  age_group: "Demográficas",
+  pregnancy_priority1: "Demográficas",
+  bmi_group: "Demográficas",
+  female_highrisk_cv_pathology: "Demográficas",
+  high_risk_base_cv_pathology: "Clínicas",
+  cv_comorbidity_at_least_one: "Clínicas",
+  combo_ic_ci: "Clínicas",
+  combo_ic_fa: "Clínicas",
+  noncv_comorbidity_at_least_one: "Clínicas",
+  ldl_above_target: "Clínicas",
+  lvef_lt40: "Clínicas",
+  venous_thromboembolism: "Clínicas",
+  hypertension: "Clínicas",
+  utilization_high: "Clínicas",
+  first_year_post_coronary_event: "Clínicas",
+  significant_med_changes: "Farmacoterapéuticas",
+  complex_regimen: "Farmacoterapéuticas",
+  high_alert_meds_ismp: "Farmacoterapéuticas",
+  pharmaco_goals_met: "Farmacoterapéuticas",
+  polypharmacy_level: "Farmacoterapéuticas",
+  adherence_status: "Farmacoterapéuticas",
+  physical_activity: "Sociosanitarias",
+  tobacco: "Sociosanitarias",
+};
 
-  for (const v of APP.stratificationModel) {
-    const row = document.createElement("div");
-    row.className = "intervRow";
-    row.style.gridTemplateColumns = "1.6fr 1fr 1fr";
-    row.dataset.varId = v.id;
+const STRAT_UI_STATE = {
+  selections: {},
+  warnings: [],
+};
 
-    const sel = document.createElement("select");
-    sel.className = "select";
-    sel.setAttribute("data-strat-sel", "1");
-
-    sel.innerHTML =
-      `<option value="">—</option>` +
-      v.options.map((o) => `<option value="${o.value}">${o.label} (${o.points})</option>`).join("");
-
-    if (defaultValues && defaultValues[v.id] !== undefined && defaultValues[v.id] !== null) {
-      sel.value = String(defaultValues[v.id]);
-    }
-
-    const pts = document.createElement("div");
-    pts.className = "smallMuted";
-    pts.setAttribute("data-strat-pts", "1");
-    pts.textContent = "0 pts";
-
-    const label = document.createElement("div");
-    label.className = "smallMuted";
-    label.textContent = v.label;
-
-    row.appendChild(label);
-    row.appendChild(sel);
-    row.appendChild(pts);
-
-    container.appendChild(row);
-
-    sel.addEventListener("change", () => {
-      updateStratScoreUI();
-      autoFillLevelFromScore();
-    });
+function stratInputMode(varDef) {
+  if (varDef.options.length === 2) {
+    const hasNo = varDef.options.some((o) => String(o.value) === "no");
+    const hasYes = varDef.options.some((o) => String(o.value) === "yes");
+    if (hasNo && hasYes) return "checkbox";
   }
+  return "radio";
+}
 
+function applyStratRules(selections, { enforce = false } = {}) {
+  const normalized = { ...(selections || {}) };
+  const warnings = [];
+  const sex = ($("#p_sex")?.value || "").toUpperCase();
+  if (sex !== "F" && normalized.pregnancy_priority1 === "yes") {
+    warnings.push("Embarazo (Prioridad 1) requiere sexo F. Ajustado automáticamente a “No”.");
+    if (enforce) normalized.pregnancy_priority1 = "no";
+  }
+  return { selections: normalized, warnings };
+}
+
+function groupedStratificationModel() {
+  const grouped = new Map();
+  for (const groupName of STRAT_GROUP_ORDER) grouped.set(groupName, []);
+  for (const v of APP.stratificationModel) {
+    const group = STRAT_GROUP_BY_ID[v.id] || "Otros";
+    grouped.get(group).push(v);
+  }
+  return grouped;
+}
+
+function buildStratVarsPicker(defaultValues = {}) {
+  STRAT_UI_STATE.selections = { ...(defaultValues || {}) };
+  STRAT_UI_STATE.warnings = [];
+  renderStratificationUI();
   updateStratScoreUI();
   autoFillLevelFromScore();
 }
 
-function getStratSelections() {
-  const out = {};
-  const rows = Array.from($("#stratVarsPicker").querySelectorAll(".intervRow"));
-  for (const r of rows) {
-    const id = r.dataset.varId;
-    const sel = r.querySelector('[data-strat-sel]');
-    if (sel && sel.value !== "") out[id] = sel.value;
+function renderStratificationUI() {
+  const container = $("#stratVarsPicker");
+  container.innerHTML = "";
+  const grouped = groupedStratificationModel();
+
+  for (const [groupName, vars] of grouped.entries()) {
+    if (!vars.length) continue;
+    const groupEl = document.createElement("div");
+    groupEl.className = "stratGroup";
+
+    const title = document.createElement("div");
+    title.className = "stratGroupTitle";
+    title.textContent = groupName;
+    groupEl.appendChild(title);
+
+    for (const v of vars) {
+      const inputMode = stratInputMode(v);
+      const card = document.createElement("div");
+      card.className = "stratVarCard";
+      card.dataset.varId = v.id;
+
+      const label = document.createElement("div");
+      label.className = "stratVarLabel";
+      label.textContent = v.label;
+      card.appendChild(label);
+
+      const optionsWrap = document.createElement("div");
+      optionsWrap.className = "stratOptionsRow";
+
+      for (const opt of v.options) {
+        const optionLabel = document.createElement("label");
+        optionLabel.className = "stratOption";
+
+        const left = document.createElement("div");
+        left.className = "stratOptionMain";
+
+        const input = document.createElement("input");
+        input.type = inputMode;
+        input.name = `strat_${v.id}`;
+        input.value = String(opt.value);
+        input.checked = String(STRAT_UI_STATE.selections[v.id] ?? "") === String(opt.value);
+        input.dataset.stratInput = "1";
+        input.dataset.varId = v.id;
+        input.dataset.optionValue = String(opt.value);
+
+        input.addEventListener("change", (ev) => {
+          const value = ev.target.dataset.optionValue;
+          if (inputMode === "checkbox") {
+            STRAT_UI_STATE.selections[v.id] = ev.target.checked && value === "yes" ? "yes" : "no";
+          } else {
+            STRAT_UI_STATE.selections[v.id] = value;
+          }
+          const ruled = applyStratRules(STRAT_UI_STATE.selections, { enforce: true });
+          STRAT_UI_STATE.selections = ruled.selections;
+          STRAT_UI_STATE.warnings = ruled.warnings;
+          renderStratificationUI();
+          updateStratScoreUI();
+          autoFillLevelFromScore();
+        });
+
+        const txt = document.createElement("div");
+        txt.className = "stratOptionText";
+        txt.textContent = opt.label;
+
+        left.appendChild(input);
+        left.appendChild(txt);
+
+        const pts = document.createElement("div");
+        pts.className = "stratOptionPts";
+        pts.textContent = `${Number(opt.points || 0)} pts`;
+
+        optionLabel.appendChild(left);
+        optionLabel.appendChild(pts);
+        optionsWrap.appendChild(optionLabel);
+      }
+      card.appendChild(optionsWrap);
+      groupEl.appendChild(card);
+    }
+    container.appendChild(groupEl);
   }
-  return out;
+
+  if (STRAT_UI_STATE.warnings.length) {
+    const warn = document.createElement("div");
+    warn.className = "stratRuleWarn";
+    warn.textContent = STRAT_UI_STATE.warnings.join(" ");
+    container.appendChild(warn);
+  }
+}
+
+function getStratSelections() {
+  return { ...(STRAT_UI_STATE.selections || {}) };
 }
 
 function computeStratScore(selections) {
@@ -2060,18 +2165,11 @@ function computeStratScore(selections) {
 
 function updateStratScoreUI() {
   const selections = getStratSelections();
-  const rows = Array.from($("#stratVarsPicker").querySelectorAll(".intervRow"));
-  for (const r of rows) {
-    const id = r.dataset.varId;
-    const sel = r.querySelector("[data-strat-sel]");
-    const ptsEl = r.querySelector("[data-strat-pts]");
-    const varDef = APP.stratificationModel.find((v) => v.id === id);
-    const opt = varDef?.options?.find((o) => String(o.value) === String(sel.value));
-    const pts = opt ? Number(opt.points || 0) : 0;
-    ptsEl.textContent = `${pts} pts`;
-  }
   const total = computeStratScore(selections);
   $("#p_score").value = String(total);
+  const scoreBadge = $("#stratLiveScoreBadge");
+  if (scoreBadge) scoreBadge.textContent = `${total} pts`;
+  updateStratExplanation(selections, total);
 }
 
 function autoFillLevelFromScore() {
@@ -2079,6 +2177,34 @@ function autoFillLevelFromScore() {
   const score = safeNum($("#p_score").value) ?? 0;
   const lvl = levelFromScoreWithOverrides(score, selections);
   $("#p_levelAuto").value = `Nivel ${lvl}`;
+  const levelBadge = $("#stratLiveLevelBadge");
+  if (levelBadge) {
+    levelBadge.textContent = `Nivel ${lvl}`;
+    levelBadge.classList.remove("level1", "level2", "level3");
+    levelBadge.classList.add(`level${lvl}`);
+  }
+}
+
+function updateStratExplanation(selections, total) {
+  const list = $("#stratExplanationList");
+  if (!list) return;
+  const selected = [];
+  for (const v of APP.stratificationModel) {
+    const val = selections[v.id];
+    if (val === undefined || val === null || val === "") continue;
+    const opt = v.options.find((o) => String(o.value) === String(val));
+    if (!opt) continue;
+    selected.push(`${v.label}: ${opt.label} (${opt.points} pts)`);
+  }
+  list.innerHTML = selected.length
+    ? selected.map((txt) => `<li>${txt}</li>`).join("")
+    : `<li class="smallMuted">Sin variables seleccionadas.</li>`;
+
+  const summary = $("#stratSummaryText");
+  if (summary) {
+    const lvl = levelFromScoreWithOverrides(total, selections);
+    summary.textContent = `Score ${total} · Nivel ${lvl} (cortes: ≥${APP.cutoffs.level1} → Nivel 1, ≥${APP.cutoffs.level2} → Nivel 2).`;
+  }
 }
 
 // ---------------- Interventions UI ----------------
@@ -2965,6 +3091,14 @@ function bindPatientsUI() {
 
   $("#btnGenerateHC").addEventListener("click", generateHCFromForm);
   $("#btnCopyHC").addEventListener("click", copyHC);
+  $("#p_sex").addEventListener("change", () => {
+    const ruled = applyStratRules(STRAT_UI_STATE.selections, { enforce: true });
+    STRAT_UI_STATE.selections = ruled.selections;
+    STRAT_UI_STATE.warnings = ruled.warnings;
+    renderStratificationUI();
+    updateStratScoreUI();
+    autoFillLevelFromScore();
+  });
 
   // no-op hooks (por si luego quieres lógica automática)
   ["#v_ldl", "#v_ldlTarget", "#v_goalAch", "#v_hospDrug"].forEach((sel) => {
