@@ -349,6 +349,76 @@ const APP = {
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
+const IEXPAC_ITEMS = [
+  "Me ayudan a cumplir mi tratamiento.",
+  "Se coordinan bien para atenderme.",
+  "Me facilitan usar Internet o App para mi salud.",
+  "Me animan a cuidar mi salud día a día.",
+  "Me explican de forma clara mi plan terapéutico.",
+  "Me preguntan por mis objetivos personales.",
+  "Puedo consultar dudas entre visitas.",
+  "Revisan conmigo lo que sí me funciona.",
+  "Siento que mi opinión cuenta en decisiones.",
+  "Me orientan para prevenir descompensaciones.",
+  "Cuando cambio de profesional, la atención sigue bien coordinada.",
+];
+
+function clamp(n, min, max) {
+  return Math.max(min, Math.min(max, n));
+}
+
+function classifyMorisky(score) {
+  if (!Number.isFinite(score)) return "Sin dato";
+  if (score === 0) return "Alta";
+  if (score <= 2) return "Media";
+  return "Baja";
+}
+
+function computeMorisky(answers) {
+  if (!answers) return { complete: false, score: null, adherenceLevel: "Sin dato" };
+  const keys = ["q1", "q2", "q3", "q4"];
+  if (keys.some((k) => !answers[k])) return { complete: false, score: null, adherenceLevel: "Sin dato" };
+  const score = keys.reduce((acc, k) => acc + (answers[k] === "yes" ? 1 : 0), 0);
+  return { complete: true, score, adherenceLevel: classifyMorisky(score) };
+}
+
+function normalizeLikertScore(raw) {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return null;
+  return clamp(Math.round(n), 1, 5);
+}
+
+function toIexpac0To10FromLikert(arr) {
+  if (!arr.length) return null;
+  const avg = arr.reduce((s, n) => s + n, 0) / arr.length;
+  return Number((((avg - 1) / 4) * 10).toFixed(2));
+}
+
+function computeIexpac(answers) {
+  if (!Array.isArray(answers) || answers.length !== 11) {
+    return { complete: false, globalScore: null, subscales: null };
+  }
+  const vals = answers.map(normalizeLikertScore);
+  if (vals.some((v) => v === null)) {
+    return { complete: false, globalScore: null, subscales: null };
+  }
+  const ix = {
+    productiveInteractions: [0, 1, 4, 8],
+    newRelationalModel: [2, 6, 10],
+    selfManagement: [3, 5, 7, 9],
+  };
+  const pick = (idxs) => idxs.map((i) => vals[i]);
+  return {
+    complete: true,
+    globalScore: toIexpac0To10FromLikert(vals),
+    subscales: {
+      productiveInteractions: toIexpac0To10FromLikert(pick(ix.productiveInteractions)),
+      newRelationalModel: toIexpac0To10FromLikert(pick(ix.newRelationalModel)),
+      selfManagement: toIexpac0To10FromLikert(pick(ix.selfManagement)),
+    },
+  };
+}
+
 // SUPABASE AUTH
 async function signIn(email, password) {
   if (!window.supabase) throw new Error("Supabase no está listo.");
@@ -505,6 +575,12 @@ function mapPatientRowToFrontend(row) {
 function mapVisitRowToFrontend(row, patientsByUuid = new Map()) {
   if (!row) return null;
   const linkedPatient = patientsByUuid.get(row.patient_id) || null;
+  let questionnaires = null;
+  if (row.questionnaire_json && typeof row.questionnaire_json === "object") {
+    questionnaires = row.questionnaire_json;
+  } else if (row.questionnaire_json && typeof row.questionnaire_json === "string") {
+    try { questionnaires = JSON.parse(row.questionnaire_json); } catch {}
+  }
   return {
     id: row.id ?? null,
     visitId: row.local_visit_code || `VISIT-${row.id || row.patient_id || "UNKNOWN"}`,
@@ -526,6 +602,7 @@ function mapVisitRowToFrontend(row, patientsByUuid = new Map()) {
     oftObjectives: row.oft_objectives ?? null,
     followUpPlan: row.follow_up_plan ?? null,
     nextVisitSuggested: row.next_visit_suggested ?? null,
+    questionnaires,
     createdAt: row.created_at || null,
     schemaVersion: APP.schemaVersion,
   };
@@ -537,7 +614,7 @@ async function loadVisitsSchema() {
   const optionalCandidates = [
     "created_at", "updated_at", "id", "local_visit_code", "hospital_drug", "ldl", "ldl_target", "ldl_goal_achieved",
     "treatment", "adherence", "ram", "strat_vars", "cmo_score", "priority_level",
-    "priority_justification", "oft_objectives", "follow_up_plan", "next_visit_suggested",
+    "priority_justification", "oft_objectives", "follow_up_plan", "next_visit_suggested", "questionnaire_json",
   ];
 
   const schema = { required: new Set(), optional: new Set(), optionalCandidates };
@@ -588,6 +665,7 @@ function buildVisitInsertRow(visit, patientUuid, authUser, schema) {
     oft_objectives: cleanOptionalText(visit.oftObjectives),
     follow_up_plan: cleanOptionalText(visit.followUpPlan),
     next_visit_suggested: visit.nextVisitSuggested,
+    questionnaire_json: visit.questionnaires || null,
   };
 
   const allowed = new Set([...(schema?.required || []), ...(schema?.optional || [])]);
@@ -843,6 +921,7 @@ const CSV_SCHEMA = {
     { key: "oftObjectives",       required: false, type: "string" },
     { key: "followUpPlan",        required: false, type: "string" },
     { key: "stratVars_json",      required: false, type: "string" }, // JSON-serialized stratification vars
+    { key: "questionnaires_json", required: false, type: "string" },
     { key: "createdAt",           required: false, type: "string" },
     { key: "schemaVersion",       required: false, type: "string" },
   ],
@@ -1686,12 +1765,91 @@ function openPatient(patientId) {
 
   renderVisitsTable(patientId);
   drawLDLChart(patientId);
+  renderQuestionnaireTrend(patientId);
 }
 
 function closePatient() {
   APP.state.selectedPatientId = null;
   $("#patientDetailCard").classList.add("hidden");
   $("#patientsTable").closest(".card").classList.remove("hidden");
+}
+
+function questionnaireTrendRows(patientId) {
+  return APP.state.visits
+    .filter((v) => v.patientId === patientId)
+    .slice()
+    .sort((a, b) => (a.date > b.date ? 1 : -1))
+    .map((v) => ({
+      date: v.date,
+      moriskyScore: v.questionnaires?.morisky?.complete ? v.questionnaires.morisky.score : null,
+      moriskyLevel: v.questionnaires?.morisky?.complete ? v.questionnaires.morisky.adherenceLevel : null,
+      iexpacGlobal: v.questionnaires?.iexpac?.complete ? v.questionnaires.iexpac.globalScore : null,
+    }))
+    .filter((r) => r.moriskyScore !== null || r.iexpacGlobal !== null);
+}
+
+function renderQuestionnaireTrend(patientId) {
+  const rows = questionnaireTrendRows(patientId);
+  const tbody = $("#questionnaireTrendTable tbody");
+  tbody.innerHTML = "";
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="4" class="smallMuted">Sin cuestionarios registrados.</td></tr>`;
+  } else {
+    rows.slice().reverse().forEach((r) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${fmtDate(r.date)}</td>
+        <td>${r.moriskyScore ?? "—"}</td>
+        <td>${r.moriskyLevel || "—"}</td>
+        <td>${r.iexpacGlobal ?? "—"}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+  drawQuestionnaireTrendChart(rows);
+}
+
+function drawQuestionnaireTrendChart(rows) {
+  const canvas = $("#questionnaireTrendChart");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const W = canvas.width, H = canvas.height;
+  ctx.fillStyle = "#fafbfd";
+  ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = "rgba(0,0,0,.06)";
+  for (let i = 0; i <= 4; i++) {
+    const y = 24 + ((H - 52) * i) / 4;
+    ctx.beginPath(); ctx.moveTo(40, y); ctx.lineTo(W - 20, y); ctx.stroke();
+  }
+  if (!rows.length) {
+    ctx.fillStyle = "rgba(0,0,0,.35)";
+    ctx.font = "14px system-ui";
+    ctx.fillText("Sin cuestionarios longitudinales", W / 2 - 90, H / 2);
+    return;
+  }
+  const xFor = (i, n) => 48 + ((W - 76) * i) / Math.max(n - 1, 1);
+  const yForIexpac = (v) => 24 + (H - 52) * (1 - v / 10);
+  const yForMorisky = (v) => 24 + (H - 52) * (v / 4);
+  const drawSeries = (vals, color, yFn) => {
+    const pts = vals
+      .map((v, i) => (v === null || v === undefined ? null : ({ x: xFor(i, vals.length), y: yFn(v), v })))
+      .filter(Boolean);
+    if (!pts.length) return;
+    ctx.strokeStyle = color; ctx.lineWidth = 2.2; ctx.beginPath();
+    pts.forEach((p, idx) => idx === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+    ctx.stroke();
+    pts.forEach((p) => {
+      ctx.beginPath(); ctx.arc(p.x, p.y, 3.5, 0, Math.PI * 2);
+      ctx.fillStyle = color; ctx.fill();
+    });
+  };
+  drawSeries(rows.map((r) => r.iexpacGlobal), "#2a9d6e", yForIexpac);
+  drawSeries(rows.map((r) => r.moriskyScore), "#d63a55", yForMorisky);
+  ctx.fillStyle = "#2a9d6e"; ctx.fillRect(50, 8, 10, 10);
+  ctx.fillStyle = "#1a2332"; ctx.font = "11px system-ui"; ctx.fillText("IEXPAC (0-10)", 65, 17);
+  ctx.fillStyle = "#d63a55"; ctx.fillRect(155, 8, 10, 10);
+  ctx.fillStyle = "#1a2332"; ctx.fillText("Morisky (0-4)", 170, 17);
 }
 
 function renderVisitsTable(patientId) {
@@ -1750,6 +1908,14 @@ function openVisitDetail(visitId) {
     <div class="k">Tratamiento (texto)</div><div class="v">${v.treatment || "—"}</div>
     <div class="k">Adherencia</div><div class="v">${v.adherence || "—"}</div>
     <div class="k">RAM</div><div class="v">${v.ram || "—"}</div>
+    <div class="k">Morisky</div><div class="v">${
+      v.questionnaires?.morisky?.complete
+        ? `${v.questionnaires.morisky.score}/4 (${v.questionnaires.morisky.adherenceLevel})`
+        : "—"
+    }</div>
+    <div class="k">IEXPAC global</div><div class="v">${
+      v.questionnaires?.iexpac?.complete ? `${v.questionnaires.iexpac.globalScore}/10` : "—"
+    }</div>
     <div class="k">OFT</div><div class="v">${v.oftObjectives || "—"}</div>
     <div class="k">Plan seguimiento</div><div class="v">${v.followUpPlan || "—"}</div>
   `;
@@ -2143,6 +2309,69 @@ function collectInterventionsFromPicker(patientId, visitId) {
 
 // ---------------- Visit form ----------------
 
+function buildIexpacGrid() {
+  const grid = $("#iexpacGrid");
+  if (!grid) return;
+  grid.innerHTML = IEXPAC_ITEMS.map((label, i) => `
+    <div class="questionnaireRow">
+      <span class="questionnaireLabel">${i + 1}. ${esc(label)}</span>
+      <select class="select q-iexpac" id="v_iexpac_q${i + 1}">
+        <option value="">—</option>
+        <option value="1">1</option>
+        <option value="2">2</option>
+        <option value="3">3</option>
+        <option value="4">4</option>
+        <option value="5">5</option>
+      </select>
+    </div>
+  `).join("");
+}
+
+function collectQuestionnaireFromVisitForm() {
+  const moriskyAnswers = {
+    q1: $("#v_morisky_q1")?.value || "",
+    q2: $("#v_morisky_q2")?.value || "",
+    q3: $("#v_morisky_q3")?.value || "",
+    q4: $("#v_morisky_q4")?.value || "",
+  };
+  const iexpacAnswers = Array.from({ length: 11 }, (_, i) => $(`#v_iexpac_q${i + 1}`)?.value || "");
+  const morisky = computeMorisky(moriskyAnswers);
+  const iexpac = computeIexpac(iexpacAnswers);
+  const hasAnyValue =
+    Object.values(moriskyAnswers).some(Boolean) || iexpacAnswers.some(Boolean);
+  if (!hasAnyValue) return null;
+  return {
+    morisky: { answers: moriskyAnswers, ...morisky },
+    iexpac: { answers: iexpacAnswers, ...iexpac },
+    capturedAt: new Date().toISOString(),
+  };
+}
+
+function renderQuestionnaireSummary() {
+  const q = collectQuestionnaireFromVisitForm();
+  const moriskyText = !q?.morisky?.complete
+    ? "Morisky: incompleto"
+    : `Morisky: ${q.morisky.score}/4 · Adherencia ${q.morisky.adherenceLevel}`;
+  const iexpacText = !q?.iexpac?.complete
+    ? "IEXPAC: incompleto"
+    : `IEXPAC global: ${q.iexpac.globalScore}/10`;
+  if ($("#v_morisky_summary")) $("#v_morisky_summary").textContent = moriskyText;
+  if ($("#v_iexpac_summary")) $("#v_iexpac_summary").textContent = iexpacText;
+}
+
+function setQuestionnaireInVisitForm(questionnaires) {
+  ["q1", "q2", "q3", "q4"].forEach((k, i) => {
+    const val = questionnaires?.morisky?.answers?.[k] || "";
+    const el = $(`#v_morisky_q${i + 1}`);
+    if (el) el.value = val;
+  });
+  for (let i = 1; i <= 11; i++) {
+    const el = $(`#v_iexpac_q${i}`);
+    if (el) el.value = questionnaires?.iexpac?.answers?.[i - 1] || "";
+  }
+  renderQuestionnaireSummary();
+}
+
 function resetVisitForm(defaults = {}) {
   $("#v_date").value = todayISO();
   $("#v_hospDrug").value = "—";
@@ -2164,6 +2393,7 @@ function resetVisitForm(defaults = {}) {
   if (defaults.treatment) $("#v_treatment").value = defaults.treatment;
   if (defaults.adherence) $("#v_adherence").value = defaults.adherence;
   if (defaults.ram) $("#v_ram").value = defaults.ram;
+  setQuestionnaireInVisitForm(defaults.questionnaires || null);
 }
 
 function getDefaultsFromLastVisit(patientId) {
@@ -2190,6 +2420,12 @@ function generateHCText(patient, visit, interventions) {
   );
   lines.push(`Tratamiento (texto): ${visit.treatment || "—"}`);
   lines.push(`Adherencia: ${visit.adherence || "—"} · RAM: ${visit.ram || "—"}`);
+  if (visit.questionnaires?.morisky?.complete) {
+    lines.push(`Morisky: ${visit.questionnaires.morisky.score}/4 · Adherencia ${visit.questionnaires.morisky.adherenceLevel}`);
+  }
+  if (visit.questionnaires?.iexpac?.complete) {
+    lines.push(`IEXPAC global: ${visit.questionnaires.iexpac.globalScore}/10`);
+  }
 
   lines.push(`Estratificación: Score ${visit.cmoScore ?? "—"} · Nivel ${visit.priorityLevel ?? "—"} · ${visit.priorityJustification || "—"}`);
 
@@ -2244,6 +2480,7 @@ function generateHCFromForm() {
     priorityJustification: cleanOptionalText($("#v_levelWhy").value),
     oftObjectives: cleanOptionalText($("#v_oft").value),
     followUpPlan: cleanOptionalText($("#v_follow").value),
+    questionnaires: collectQuestionnaireFromVisitForm(),
   };
 
   const tempVisitId = `TEMP-${patientId}-${visit.date}`;
@@ -2309,6 +2546,7 @@ async function saveVisit() {
     oftObjectives: cleanOptionalText($("#v_oft").value),
     followUpPlan: cleanOptionalText($("#v_follow").value),
     nextVisitSuggested: null,
+    questionnaires: collectQuestionnaireFromVisitForm(),
 
     createdAt: new Date().toISOString(),
     schemaVersion: APP.schemaVersion,
@@ -2473,6 +2711,7 @@ function visitsForCSV() {
     oftObjectives: v.oftObjectives ?? "",
     followUpPlan: v.followUpPlan ?? "",
     stratVars_json: v.stratVars ? JSON.stringify(v.stratVars) : "",
+    questionnaires_json: v.questionnaires ? JSON.stringify(v.questionnaires) : "",
     createdAt: v.createdAt ?? "",
     schemaVersion: v.schemaVersion ?? "",
   }));
@@ -2537,7 +2776,7 @@ function downloadVisitsTemplate() {
     cmoScore: "18", priorityLevel: "2",
     priorityJustification: "No objetivo + baja adherencia",
     oftObjectives: "Reducir LDL <55 mg/dL", followUpPlan: "Revisión 3 meses",
-    stratVars_json: "", createdAt: "", schemaVersion: "",
+    stratVars_json: "", questionnaires_json: "", createdAt: "", schemaVersion: "",
   };
   downloadText("visits_template.csv", toCSV([example], headers), "text/csv;charset=utf-8");
   toast("visits_template.csv descargada.");
@@ -2720,6 +2959,8 @@ async function prepareImportVisitsCSV(file) {
   const buildRow = (rec) => {
     let stratVars = {};
     if (rec.stratVars_json) { try { stratVars = JSON.parse(rec.stratVars_json); } catch {} }
+    let questionnaires = null;
+    if (rec.questionnaires_json) { try { questionnaires = JSON.parse(rec.questionnaires_json); } catch {} }
     const goal = (rec.ldlGoalAchieved || "").toLowerCase();
     return {
       visitId:               rec.visitId,
@@ -2739,6 +2980,7 @@ async function prepareImportVisitsCSV(file) {
       followUpPlan:          rec.followUpPlan || null,
       nextVisitSuggested:    null,
       stratVars,
+      questionnaires,
       createdAt:    rec.createdAt || new Date().toISOString(),
       schemaVersion: APP.schemaVersion,
     };
@@ -2965,6 +3207,11 @@ function bindPatientsUI() {
 
   $("#btnGenerateHC").addEventListener("click", generateHCFromForm);
   $("#btnCopyHC").addEventListener("click", copyHC);
+  $$(".q-morisky").forEach((el) => el.addEventListener("change", renderQuestionnaireSummary));
+  for (let i = 1; i <= 11; i++) {
+    const el = $(`#v_iexpac_q${i}`);
+    if (el) el.addEventListener("change", renderQuestionnaireSummary);
+  }
 
   // no-op hooks (por si luego quieres lógica automática)
   ["#v_ldl", "#v_ldlTarget", "#v_goalAch", "#v_hospDrug"].forEach((sel) => {
@@ -3201,6 +3448,7 @@ function initDebugPanel() {
 
 async function init() {
   APP.state.db = await openDB();
+  buildIexpacGrid();
   await loadAll();
   fillConditionSelectors();
   fillHospitalDrugs();
