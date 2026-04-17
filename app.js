@@ -2455,6 +2455,20 @@ function patientsForCSV() {
   }));
 }
 
+function patientsFlatForCSV() {
+  return APP.state.patients.map((p) => ({
+    patient_id: p.patientId,
+    prevalent_condition: p.prevalentCondition ?? "",
+    sex: p.sex ?? "",
+    birth_year: p.birthYear ?? "",
+    comorbidities: p.comorbidities ?? "",
+    notes: p.notes ?? "",
+    status: p.status ?? "",
+    created_at: p.createdAt ?? "",
+    schema_version: p.schemaVersion ?? "",
+  }));
+}
+
 function visitsForCSV() {
   return APP.state.visits.map((v) => ({
     visitId: v.visitId,
@@ -2478,6 +2492,49 @@ function visitsForCSV() {
   }));
 }
 
+function buildVisitSequenceMap() {
+  const visitsByPatient = new Map();
+  for (const visit of APP.state.visits) {
+    if (!visitsByPatient.has(visit.patientId)) visitsByPatient.set(visit.patientId, []);
+    visitsByPatient.get(visit.patientId).push(visit);
+  }
+  const sequenceByVisitId = new Map();
+  for (const visits of visitsByPatient.values()) {
+    visits.sort((a, b) => {
+      const dateA = a.date || "";
+      const dateB = b.date || "";
+      if (dateA === dateB) return (a.visitId || "").localeCompare(b.visitId || "");
+      return dateA.localeCompare(dateB);
+    });
+    visits.forEach((visit, index) => sequenceByVisitId.set(visit.visitId, index + 1));
+  }
+  return sequenceByVisitId;
+}
+
+function longitudinalVisitsForCSV() {
+  const sequenceByVisitId = buildVisitSequenceMap();
+  return APP.state.visits.map((v) => ({
+    visit_id: v.visitId,
+    patient_id: v.patientId,
+    visit_sequence: sequenceByVisitId.get(v.visitId) ?? "",
+    visit_date: v.date ?? "",
+    hospital_drug: v.hospitalDrug ?? "",
+    ldl_mg_dl: v.ldl ?? "",
+    ldl_target_mg_dl: v.ldlTarget ?? "",
+    ldl_goal_achieved: v.ldlGoalAchieved === true ? "true" : v.ldlGoalAchieved === false ? "false" : "",
+    treatment: v.treatment ?? "",
+    adherence: v.adherence ?? "",
+    adverse_reactions: v.ram ?? "",
+    cmo_score: v.cmoScore ?? "",
+    priority_level: v.priorityLevel ?? "",
+    priority_justification: v.priorityJustification ?? "",
+    oft_objectives: v.oftObjectives ?? "",
+    follow_up_plan: v.followUpPlan ?? "",
+    created_at: v.createdAt ?? "",
+    schema_version: v.schemaVersion ?? "",
+  }));
+}
+
 function interventionsForCSV() {
   return APP.state.interventions.map((i) => ({
     interventionId: i.interventionId,
@@ -2493,11 +2550,125 @@ function interventionsForCSV() {
   }));
 }
 
+function interventionsCleanForCSV() {
+  return APP.state.interventions.map((i) => ({
+    intervention_id: i.interventionId,
+    patient_id: i.patientId,
+    visit_id: i.visitId,
+    intervention_type: i.type ?? "",
+    cmo_dimension: i.cmoDimension ?? "",
+    description: i.description ?? "",
+    status: i.status ?? "",
+    outcome_notes: i.outcomeNotes ?? "",
+    created_at: i.createdAt ?? "",
+    schema_version: i.schemaVersion ?? "",
+  }));
+}
+
+function questionnaireForCSV() {
+  const modelById = new Map(APP.stratificationModel.map((item) => [item.id, item]));
+  const rows = [];
+  for (const visit of APP.state.visits) {
+    const stratVars = visit.stratVars || {};
+    for (const [questionId, answerValue] of Object.entries(stratVars)) {
+      const model = modelById.get(questionId);
+      const selectedOption = model?.options?.find((opt) => opt.value === answerValue);
+      rows.push({
+        patient_id: visit.patientId,
+        visit_id: visit.visitId,
+        visit_date: visit.date ?? "",
+        question_id: questionId,
+        question_label: model?.label ?? "",
+        answer_value: answerValue ?? "",
+        answer_label: selectedOption?.label ?? "",
+        answer_points: selectedOption?.points ?? "",
+      });
+    }
+  }
+  return rows;
+}
+
+function statsReadyPatientVisitForCSV() {
+  const patientsById = new Map(APP.state.patients.map((p) => [p.patientId, p]));
+  const interventionsByVisit = new Map();
+  for (const iv of APP.state.interventions) {
+    if (!interventionsByVisit.has(iv.visitId)) interventionsByVisit.set(iv.visitId, []);
+    interventionsByVisit.get(iv.visitId).push(iv);
+  }
+  const sequenceByVisitId = buildVisitSequenceMap();
+  return APP.state.visits.map((visit) => {
+    const patient = patientsById.get(visit.patientId) || {};
+    const interventions = interventionsByVisit.get(visit.visitId) || [];
+    const stratVars = visit.stratVars || {};
+    const statusCounts = { accepted: 0, pending: 0, rejected: 0 };
+    for (const iv of interventions) {
+      if (iv.status in statusCounts) statusCounts[iv.status] += 1;
+    }
+    return {
+      patient_id: visit.patientId,
+      visit_id: visit.visitId,
+      visit_sequence: sequenceByVisitId.get(visit.visitId) ?? "",
+      visit_date: visit.date ?? "",
+      prevalent_condition: patient.prevalentCondition ?? "",
+      sex: patient.sex ?? "",
+      birth_year: patient.birthYear ?? "",
+      comorbidities: patient.comorbidities ?? "",
+      patient_status: patient.status ?? "",
+      ldl_mg_dl: visit.ldl ?? "",
+      ldl_target_mg_dl: visit.ldlTarget ?? "",
+      ldl_goal_achieved: visit.ldlGoalAchieved === true ? "true" : visit.ldlGoalAchieved === false ? "false" : "",
+      cmo_score: visit.cmoScore ?? "",
+      priority_level: visit.priorityLevel ?? "",
+      questionnaire_answer_count: Object.keys(stratVars).length,
+      intervention_count: interventions.length,
+      intervention_accepted_count: statusCounts.accepted,
+      intervention_pending_count: statusCounts.pending,
+      intervention_rejected_count: statusCounts.rejected,
+      created_at: visit.createdAt ?? "",
+    };
+  });
+}
+
 async function exportPatientsCSV() {
   const rows = patientsForCSV();
   if (!rows.length) return toast("No hay pacientes para exportar.");
   exportCSV({ rows, filename: "patients.csv", sep: ",", bom: false });
   toast(`patients.csv exportado (${rows.length} filas).`);
+}
+
+async function exportPatientsFlatCSV() {
+  const rows = patientsFlatForCSV();
+  if (!rows.length) return toast("No hay pacientes para exportar.");
+  exportCSV({ rows, filename: "patients_flat_file.csv", sep: ",", bom: false });
+  toast(`patients_flat_file.csv exportado (${rows.length} filas).`);
+}
+
+async function exportLongitudinalVisitsCSV() {
+  const rows = longitudinalVisitsForCSV();
+  if (!rows.length) return toast("No hay visitas para exportar.");
+  exportCSV({ rows, filename: "longitudinal_visits_file.csv", sep: ",", bom: false });
+  toast(`longitudinal_visits_file.csv exportado (${rows.length} filas).`);
+}
+
+async function exportInterventionsCleanCSV() {
+  const rows = interventionsCleanForCSV();
+  if (!rows.length) return toast("No hay intervenciones para exportar.");
+  exportCSV({ rows, filename: "interventions_file.csv", sep: ",", bom: false });
+  toast(`interventions_file.csv exportado (${rows.length} filas).`);
+}
+
+async function exportQuestionnaireCSV() {
+  const rows = questionnaireForCSV();
+  if (!rows.length) return toast("No hay cuestionarios para exportar.");
+  exportCSV({ rows, filename: "questionnaire_file.csv", sep: ",", bom: false });
+  toast(`questionnaire_file.csv exportado (${rows.length} filas).`);
+}
+
+async function exportStatsReadyCSV() {
+  const rows = statsReadyPatientVisitForCSV();
+  if (!rows.length) return toast("No hay visitas para exportar.");
+  exportCSV({ rows, filename: "statistical_ready_patient_visit.csv", sep: ",", bom: false });
+  toast(`statistical_ready_patient_visit.csv exportado (${rows.length} filas).`);
 }
 
 async function exportVisitsCSV() {
@@ -2975,6 +3146,11 @@ function bindPatientsUI() {
 
 // ---------- click dispatch table ----------
 const EXPORT_CLICK_MAP = {
+  btnExportPatientsFlatCSV:   exportPatientsFlatCSV,
+  btnExportLongitudinalCSV:   exportLongitudinalVisitsCSV,
+  btnExportInterventionsFile: exportInterventionsCleanCSV,
+  btnExportQuestionnaireCSV:  exportQuestionnaireCSV,
+  btnExportStatsReadyCSV:     exportStatsReadyCSV,
   btnExportPatientsCSV:       exportPatientsCSV,
   btnExportVisitsCSV:         exportVisitsCSV,
   btnExportInterventionsCSV:  exportInterventionsCSV,
@@ -3049,6 +3225,11 @@ function bindExportUI() {
   }
 
   bind("#btnExportPatientsCSV",       exportPatientsCSV);
+  bind("#btnExportPatientsFlatCSV",   exportPatientsFlatCSV);
+  bind("#btnExportLongitudinalCSV",   exportLongitudinalVisitsCSV);
+  bind("#btnExportInterventionsFile", exportInterventionsCleanCSV);
+  bind("#btnExportQuestionnaireCSV",  exportQuestionnaireCSV);
+  bind("#btnExportStatsReadyCSV",     exportStatsReadyCSV);
   bind("#btnExportVisitsCSV",         exportVisitsCSV);
   bind("#btnExportInterventionsCSV",  exportInterventionsCSV);
   bind("#btnExportPatientsCSVES",     exportPatientsCSVExcelES);
