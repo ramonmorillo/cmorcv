@@ -449,6 +449,109 @@ label{font-size:12px; color: var(--muted); font-weight:800}
   gap:10px;
   align-items:center;
 }
+.stratGroup{
+  border:1px solid rgba(59,109,224,.14);
+  border-radius:14px;
+  padding:10px;
+  background: linear-gradient(180deg, rgba(59,109,224,.06), rgba(59,109,224,.02));
+}
+.stratGroupTitle{
+  font-size:11px;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+  color: var(--accent);
+  font-weight:900;
+  margin-bottom:8px;
+}
+.stratVarCard{
+  border:1px solid rgba(0,0,0,.08);
+  border-radius:12px;
+  background:#fff;
+  padding:10px;
+  margin-bottom:8px;
+}
+.stratVarCard:last-child{margin-bottom:0}
+.stratVarLabel{
+  font-size:12px;
+  font-weight:800;
+  color:var(--text);
+  margin-bottom:8px;
+}
+.stratOptionsRow{
+  display:flex;
+  flex-direction:column;
+  gap:7px;
+}
+.stratOption{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:10px;
+  border:1px solid rgba(0,0,0,.08);
+  border-radius:10px;
+  padding:8px 10px;
+  background:rgba(0,0,0,.01);
+  cursor:pointer;
+}
+.stratOption:hover{border-color:rgba(59,109,224,.36); background:rgba(59,109,224,.05)}
+.stratOptionMain{display:flex; gap:8px; align-items:flex-start}
+.stratOptionText{font-size:12px; color:var(--text)}
+.stratOptionPts{
+  font-size:11px;
+  color:var(--muted);
+  border:1px solid rgba(0,0,0,.08);
+  border-radius:999px;
+  padding:2px 7px;
+  white-space:nowrap;
+}
+.stratOption input{margin-top:2px}
+.stratOption input[type="radio"], .stratOption input[type="checkbox"]{
+  accent-color: var(--accent);
+}
+.stratKpiRow{
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.stratLiveBadge{
+  border-radius:999px;
+  padding:7px 10px;
+  font-size:11px;
+  font-weight:900;
+  white-space:nowrap;
+}
+.stratLiveBadge--score{
+  background:rgba(59,109,224,.12);
+  border:1px solid rgba(59,109,224,.28);
+  color:var(--accent);
+}
+.stratLiveBadge--level{
+  border:1px solid transparent;
+}
+.stratLiveBadge--level.level1{background:rgba(214,58,85,.10); border-color:rgba(214,58,85,.28); color:var(--danger)}
+.stratLiveBadge--level.level2{background:rgba(224,136,0,.12); border-color:rgba(224,136,0,.28); color:#9f6200}
+.stratLiveBadge--level.level3{background:rgba(42,157,110,.12); border-color:rgba(42,157,110,.28); color:#1f7e57}
+.stratExplanationPanel{
+  border:1px solid rgba(0,0,0,.08);
+  border-radius:14px;
+  background:#fff;
+  padding:10px 12px;
+}
+.stratExplanationList{
+  margin:8px 0 0;
+  padding-left:18px;
+  display:flex;
+  flex-direction:column;
+  gap:5px;
+  font-size:12px;
+}
+.stratExplanationList li{color:var(--text)}
+.stratRuleWarn{
+  margin-top:7px;
+  font-size:11px;
+  color: var(--danger);
+  font-weight:700;
+}
 .chips{display:flex; flex-wrap:wrap; gap:8px}
 .chip{
   padding: 6px 10px;

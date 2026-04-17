@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Herramienta seguimiento CMO para RCV</title>
-  <link rel="stylesheet" href="./styles.css?v=20260409_1200" />
+  <link rel="stylesheet" href="./styles.css?v=20260417_1500" />
 </head>
 <body>
   <div id="loginGate" class="panel" style="max-width:420px;margin:40px auto;padding:20px">
@@ -701,18 +701,34 @@
 
               <div class="field">
                 <label>Score estratificación</label>
-                <input class="input" id="p_score" readonly />
+                <div class="stratKpiRow">
+                  <input class="input" id="p_score" readonly />
+                  <div class="stratLiveBadge stratLiveBadge--score" id="stratLiveScoreBadge">0 pts</div>
+                </div>
               </div>
 
               <div class="field">
                 <label>Nivel/Prioridad (auto)</label>
-                <input class="input" id="p_levelAuto" readonly />
+                <div class="stratKpiRow">
+                  <input class="input" id="p_levelAuto" readonly />
+                  <div class="stratLiveBadge stratLiveBadge--level level3" id="stratLiveLevelBadge">Nivel 3</div>
+                </div>
               </div>
 
               <div class="field span2">
                 <label>Estratificación CMO — variables basales</label>
                 <div class="interventionsWrap" id="stratVarsPicker"></div>
                 <div class="smallMuted">El score y nivel se recalculan al cambiar cualquier variable.</div>
+              </div>
+
+              <div class="field span2">
+                <label>Explicación en tiempo real</label>
+                <div class="stratExplanationPanel" id="stratExplanationPanel">
+                  <div class="stratExplanationTop">
+                    <div class="smallMuted" id="stratSummaryText">Sin variables seleccionadas aún.</div>
+                  </div>
+                  <ul class="stratExplanationList" id="stratExplanationList"></ul>
+                </div>
               </div>
             </div>
           </div>
@@ -853,6 +869,6 @@
     window.supabase = createClient(supabaseUrl, supabaseKey);
     window.dispatchEvent(new Event('supabaseReady'));
   </script>
-  <script src="./app.js?v=20260409_1200"></script>
+  <script src="./app.js?v=20260417_1500"></script>
 </body>
 </html>
