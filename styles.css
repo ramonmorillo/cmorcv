@@ -696,3 +696,44 @@ label{font-size:12px; color: var(--muted); font-weight:800}
 @media (max-width: 600px){
   .dashRow,.dashRow4{grid-template-columns:1fr}
 }
+
+
+.panelActionsPatients .input,
+.panelActionsPatients .select{
+  min-width: 170px;
+}
+
+.clickableRow{cursor:pointer}
+
+.pagination{
+  display:flex;
+  justify-content:flex-end;
+  align-items:center;
+  gap:10px;
+  margin-top:12px;
+}
+
+.tabs{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  margin-bottom:14px;
+}
+
+.tabBtn{
+  border:1px solid rgba(0,0,0,.12);
+  background:transparent;
+  color:var(--text);
+  padding:8px 12px;
+  border-radius:12px;
+  font-weight:700;
+  cursor:pointer;
+}
+
+.tabBtn.active{
+  color:var(--accent);
+  border-color:rgba(59,109,224,.35);
+  background:rgba(59,109,224,.10);
+}
+
+.profileTabPanel{min-height:140px;}

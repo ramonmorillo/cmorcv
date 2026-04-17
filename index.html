@@ -101,10 +101,31 @@
         <div class="panel">
           <div class="panelHeader">
             <div class="panelTitle">Listado</div>
-            <div class="panelActions">
-              <input id="patientSearch" class="input" placeholder="Buscar por ID, patología, notas..." />
+            <div class="panelActions panelActionsPatients">
+              <input id="patientSearch" class="input" placeholder="Buscar por código o nombre..." />
               <select id="conditionFilter" class="select">
                 <option value="">Todas las patologías</option>
+              </select>
+              <select id="levelFilter" class="select">
+                <option value="">Todos los niveles</option>
+                <option value="1">Nivel 1</option>
+                <option value="2">Nivel 2</option>
+                <option value="3">Nivel 3</option>
+              </select>
+              <select id="statusFilter" class="select">
+                <option value="">Activos + completados</option>
+                <option value="active">Activos</option>
+                <option value="completed">Completados</option>
+              </select>
+              <select id="smokerFilter" class="select">
+                <option value="">Fumador: todos</option>
+                <option value="yes">Fumador</option>
+                <option value="no">No fumador</option>
+              </select>
+              <select id="adherenceFilter" class="select">
+                <option value="">Adherencia: todos</option>
+                <option value="low">Baja adherencia</option>
+                <option value="ok">Sin baja adherencia</option>
               </select>
             </div>
           </div>
@@ -143,7 +164,8 @@
                   <table class="table" id="patientsTable">
                     <thead>
                       <tr>
-                        <th>ID</th>
+                        <th>Código</th>
+                        <th>Nombre</th>
                         <th>Patología</th>
                         <th>Sexo</th>
                         <th>Nac.</th>
@@ -157,6 +179,11 @@
                     </thead>
                     <tbody></tbody>
                   </table>
+                </div>
+                <div class="pagination" id="patientsPagination">
+                  <button class="btn ghost" id="patientsPrevPage">← Anterior</button>
+                  <div class="smallMuted" id="patientsPageInfo">Página 1 de 1</div>
+                  <button class="btn ghost" id="patientsNextPage">Siguiente →</button>
                 </div>
               </div>
             </div>
@@ -176,68 +203,101 @@
               </div>
 
               <div class="cardBody">
-                <div class="detailGrid">
-                  <div class="detailSection">
-                    <div class="sectionTitle">Resumen</div>
-                    <div class="kv">
-                      <div class="k">ID</div><div class="v" id="d_patientId">—</div>
-                      <div class="k">Patología</div><div class="v" id="d_condition">—</div>
-                      <div class="k">Sexo</div><div class="v" id="d_sex">—</div>
-                      <div class="k">Año nac.</div><div class="v" id="d_birthYear">—</div>
-                      <div class="k">Comorbilidades</div><div class="v" id="d_comorb">—</div>
-                      <div class="k">Notas</div><div class="v" id="d_notes">—</div>
-                    </div>
-                  </div>
+                <div class="tabs" id="patientProfileTabs">
+                  <button class="tabBtn active" data-profile-tab="summary">Resumen</button>
+                  <button class="tabBtn" data-profile-tab="visits">Visitas</button>
+                  <button class="tabBtn" data-profile-tab="interventions">Intervenciones</button>
+                  <button class="tabBtn" data-profile-tab="questionnaires">Cuestionarios</button>
+                </div>
 
-                  <div class="detailSection">
-                    <div class="sectionTitle">Dashboard</div>
-                    <div class="dashRow">
-                      <div class="miniCard">
-                        <div class="miniLabel">Nivel actual</div>
-                        <div class="miniValue" id="d_levelNow">—</div>
-                        <div class="miniHint" id="d_levelWhy">—</div>
-                      </div>
-                      <div class="miniCard">
-                        <div class="miniLabel">Score actual</div>
-                        <div class="miniValue" id="d_scoreNow">—</div>
-                        <div class="miniHint">Cortes: ≥23→N1; ≥17→N2</div>
-                      </div>
-                      <div class="miniCard">
-                        <div class="miniLabel">LDL último</div>
-                        <div class="miniValue" id="d_ldlLast">—</div>
-                        <div class="miniHint" id="d_ldlGoal">—</div>
+                <div class="profileTabPanel" data-profile-panel="summary">
+                  <div class="detailGrid">
+                    <div class="detailSection">
+                      <div class="sectionTitle">Resumen</div>
+                      <div class="kv">
+                        <div class="k">Código</div><div class="v" id="d_patientId">—</div>
+                        <div class="k">Nombre</div><div class="v" id="d_name">—</div>
+                        <div class="k">Patología</div><div class="v" id="d_condition">—</div>
+                        <div class="k">Sexo</div><div class="v" id="d_sex">—</div>
+                        <div class="k">Año nac.</div><div class="v" id="d_birthYear">—</div>
+                        <div class="k">Comorbilidades</div><div class="v" id="d_comorb">—</div>
+                        <div class="k">Notas</div><div class="v" id="d_notes">—</div>
                       </div>
                     </div>
 
-                    <div class="chartWrap">
-                      <canvas id="ldlChart" width="900" height="240"></canvas>
-                      <div class="smallMuted">Evolución LDL (mg/dL). (Gráfico local, sin librerías externas).</div>
+                    <div class="detailSection">
+                      <div class="sectionTitle">Dashboard</div>
+                      <div class="dashRow">
+                        <div class="miniCard">
+                          <div class="miniLabel">Nivel actual</div>
+                          <div class="miniValue" id="d_levelNow">—</div>
+                          <div class="miniHint" id="d_levelWhy">—</div>
+                        </div>
+                        <div class="miniCard">
+                          <div class="miniLabel">Score actual</div>
+                          <div class="miniValue" id="d_scoreNow">—</div>
+                          <div class="miniHint">Cortes: ≥23→N1; ≥17→N2</div>
+                        </div>
+                        <div class="miniCard">
+                          <div class="miniLabel">LDL último</div>
+                          <div class="miniValue" id="d_ldlLast">—</div>
+                          <div class="miniHint" id="d_ldlGoal">—</div>
+                        </div>
+                      </div>
+
+                      <div class="chartWrap">
+                        <canvas id="ldlChart" width="900" height="240"></canvas>
+                        <div class="smallMuted">Evolución LDL (mg/dL). (Gráfico local, sin librerías externas).</div>
+                      </div>
                     </div>
                   </div>
                 </div>
 
-                <div class="divider"></div>
+                <div class="profileTabPanel hidden" data-profile-panel="visits">
+                  <div class="sectionTitle">Visitas</div>
+                  <div class="tableWrap">
+                    <table class="table" id="visitsTable">
+                      <thead>
+                        <tr>
+                          <th>Fecha</th>
+                          <th>Fármaco hospitalario</th>
+                          <th>LDL</th>
+                          <th>Objetivo</th>
+                          <th>¿Cumple?</th>
+                          <th>Score</th>
+                          <th>Nivel</th>
+                          <th>Tratamiento (texto)</th>
+                          <th>Adherencia</th>
+                          <th>RAM</th>
+                          <th>Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody></tbody>
+                    </table>
+                  </div>
+                </div>
 
-                <div class="sectionTitle">Visitas</div>
-                <div class="tableWrap">
-                  <table class="table" id="visitsTable">
-                    <thead>
-                      <tr>
-                        <th>Fecha</th>
-                        <th>Fármaco hospitalario</th>
-                        <th>LDL</th>
-                        <th>Objetivo</th>
-                        <th>¿Cumple?</th>
-                        <th>Score</th>
-                        <th>Nivel</th>
-                        <th>Tratamiento (texto)</th>
-                        <th>Adherencia</th>
-                        <th>RAM</th>
-                        <th>Acciones</th>
-                      </tr>
-                    </thead>
-                    <tbody></tbody>
-                  </table>
+                <div class="profileTabPanel hidden" data-profile-panel="interventions">
+                  <div class="sectionTitle">Intervenciones</div>
+                  <div class="tableWrap">
+                    <table class="table" id="patientInterventionsTable">
+                      <thead>
+                        <tr>
+                          <th>Fecha visita</th>
+                          <th>Dimensión</th>
+                          <th>Descripción</th>
+                          <th>Estado</th>
+                        </tr>
+                      </thead>
+                      <tbody></tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div class="profileTabPanel hidden" data-profile-panel="questionnaires">
+                  <div class="sectionTitle">Cuestionarios</div>
+                  <div class="smallMuted">Variables de estratificación disponibles (última visita y basal).</div>
+                  <div class="kv" id="patientQuestionnaires"></div>
                 </div>
               </div>
             </div>
@@ -659,6 +719,11 @@
                 <label>ID pseudónimo *</label>
                 <input class="input" id="p_patientId" placeholder="Ej. PCSK9-000123" />
                 <div class="hint">No usar nombre/NIH.</div>
+              </div>
+
+              <div class="field">
+                <label>Nombre (alias)</label>
+                <input class="input" id="p_name" placeholder="Ej. Paciente A" />
               </div>
 
               <div class="field">
