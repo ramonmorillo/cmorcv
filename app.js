@@ -341,6 +341,7 @@ const APP = {
     centerId: null,
     centerName: null,
     visitsSchema: null,
+    visitDraftAutosaveTimer: null,
     appInitialized: false,
     authUiBound: false,
   },
@@ -511,6 +512,7 @@ function mapVisitRowToFrontend(row, patientsByUuid = new Map()) {
     patientId: linkedPatient?.patientId || row.patient_id || "",
     patientUuid: row.patient_id ?? null,
     created_by: row.created_by ?? null,
+    visitType: row.visit_type || "baseline",
     date: row.visit_date || null,
     hospitalDrug: cleanOptionalText(row.hospital_drug),
     ldl: row.ldl ?? null,
@@ -523,6 +525,7 @@ function mapVisitRowToFrontend(row, patientsByUuid = new Map()) {
     cmoScore: row.cmo_score ?? null,
     priorityLevel: row.priority_level ?? null,
     priorityJustification: row.priority_justification ?? null,
+    visitSpecificNotes: row.notes ?? null,
     oftObjectives: row.oft_objectives ?? null,
     followUpPlan: row.follow_up_plan ?? null,
     nextVisitSuggested: row.next_visit_suggested ?? null,
@@ -566,11 +569,12 @@ async function loadVisitsSchema() {
 }
 
 function buildVisitInsertRow(visit, patientUuid, authUser, schema) {
+  const notes = [visit.visitSpecificNotes, visit.notes, visit.followUpPlan].filter(Boolean).join(" | ");
   const base = {
     patient_id: patientUuid,
     visit_date: visit.date,
     visit_type: visit.visitType || "follow_up",
-    notes: visit.notes || visit.followUpPlan || "",
+    notes: notes || "",
     created_by: authUser.id,
     created_at: new Date().toISOString(),
     local_visit_code: visit.visitId,
@@ -830,6 +834,7 @@ const CSV_SCHEMA = {
     { key: "visitId",             required: true,  type: "string" },
     { key: "patientId",           required: true,  type: "string" },
     { key: "date",                required: true,  type: "date"   },
+    { key: "visitType",           required: false, type: "string" },
     { key: "hospitalDrug",        required: false, type: "string" },
     { key: "ldl",                 required: false, type: "number" },
     { key: "ldlTarget",           required: false, type: "number" },
@@ -842,6 +847,7 @@ const CSV_SCHEMA = {
     { key: "priorityJustification", required: false, type: "string" },
     { key: "oftObjectives",       required: false, type: "string" },
     { key: "followUpPlan",        required: false, type: "string" },
+    { key: "nextVisitSuggested",  required: false, type: "date" },
     { key: "stratVars_json",      required: false, type: "string" }, // JSON-serialized stratification vars
     { key: "createdAt",           required: false, type: "string" },
     { key: "schemaVersion",       required: false, type: "string" },
@@ -1708,6 +1714,7 @@ function renderVisitsTable(patientId) {
 
     tr.innerHTML = `
       <td>${v.date || "—"}</td>
+      <td>${v.visitType || "—"}</td>
       <td>${v.hospitalDrug || "—"}</td>
       <td>${v.ldl ?? "—"}</td>
       <td>${v.ldlTarget ?? "—"}</td>
@@ -1738,6 +1745,7 @@ function openVisitDetail(visitId) {
 
   const kv = $("#vd_kv");
   kv.innerHTML = `
+    <div class="k">Tipo visita</div><div class="v">${v.visitType || "—"}</div>
     <div class="k">Fármaco hospitalario</div><div class="v">${v.hospitalDrug || "—"}</div>
     <div class="k">LDL</div><div class="v">${v.ldl ?? "—"}</div>
     <div class="k">Objetivo LDL</div><div class="v">${v.ldlTarget ?? "—"}</div>
@@ -1752,6 +1760,7 @@ function openVisitDetail(visitId) {
     <div class="k">RAM</div><div class="v">${v.ram || "—"}</div>
     <div class="k">OFT</div><div class="v">${v.oftObjectives || "—"}</div>
     <div class="k">Plan seguimiento</div><div class="v">${v.followUpPlan || "—"}</div>
+    <div class="k">Siguiente visita sugerida</div><div class="v">${v.nextVisitSuggested || "—"}</div>
   `;
 
   const ints = visitInterventions(visitId);
@@ -1868,6 +1877,10 @@ function openModal(id) {
 }
 function closeModal(id) {
   $(`#${id}`).classList.add("hidden");
+  if (id === "modalVisit" && APP.state.visitDraftAutosaveTimer) {
+    clearTimeout(APP.state.visitDraftAutosaveTimer);
+    APP.state.visitDraftAutosaveTimer = null;
+  }
 }
 
 function bindModalClose() {
@@ -2144,6 +2157,7 @@ function collectInterventionsFromPicker(patientId, visitId) {
 // ---------------- Visit form ----------------
 
 function resetVisitForm(defaults = {}) {
+  $("#v_visitType").value = "baseline";
   $("#v_date").value = todayISO();
   $("#v_hospDrug").value = "—";
   $("#v_ldl").value = "";
@@ -2155,6 +2169,13 @@ function resetVisitForm(defaults = {}) {
   $("#v_levelWhy").value = "";
   $("#v_oft").value = "";
   $("#v_follow").value = "";
+  $("#v_baselineEval").value = "";
+  $("#v_m3AdherenceBarriers").value = "";
+  $("#v_m6LabReview").value = "";
+  $("#v_m9TherapyAdjustments").value = "";
+  $("#v_m12AnnualSummary").value = "";
+  $("#v_autosave").checked = false;
+  $("#v_draftStatus").textContent = "Sin borrador local/supabase.";
   $("#v_hcText").value = "";
 
   buildInterventionsPicker();
@@ -2164,6 +2185,213 @@ function resetVisitForm(defaults = {}) {
   if (defaults.treatment) $("#v_treatment").value = defaults.treatment;
   if (defaults.adherence) $("#v_adherence").value = defaults.adherence;
   if (defaults.ram) $("#v_ram").value = defaults.ram;
+  updateVisitTypePanels();
+  clearVisitValidationState();
+}
+
+const VISIT_TYPES = ["baseline", "month3", "month6", "month9", "month12"];
+const NEXT_VISIT_BY_TYPE = {
+  baseline: { nextType: "month3", monthsToAdd: 3 },
+  month3: { nextType: "month6", monthsToAdd: 3 },
+  month6: { nextType: "month9", monthsToAdd: 3 },
+  month9: { nextType: "month12", monthsToAdd: 3 },
+  month12: { nextType: null, monthsToAdd: null },
+};
+
+function addMonthsISO(isoDate, months) {
+  if (!isoDate || !months) return null;
+  const d = new Date(`${isoDate}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return null;
+  d.setUTCMonth(d.getUTCMonth() + months);
+  return d.toISOString().slice(0, 10);
+}
+
+function updateVisitTypePanels() {
+  const visitType = $("#v_visitType").value || "baseline";
+  $$("[data-visit-type-panel]").forEach((panel) => {
+    panel.classList.toggle("hidden", panel.getAttribute("data-visit-type-panel") !== visitType);
+  });
+}
+
+function getVisitTypeNotes(visitType) {
+  const mapping = {
+    baseline: cleanOptionalText($("#v_baselineEval").value),
+    month3: cleanOptionalText($("#v_m3AdherenceBarriers").value),
+    month6: cleanOptionalText($("#v_m6LabReview").value),
+    month9: cleanOptionalText($("#v_m9TherapyAdjustments").value),
+    month12: cleanOptionalText($("#v_m12AnnualSummary").value),
+  };
+  return mapping[visitType] || null;
+}
+
+function getVisitDraftPayload() {
+  const visitType = $("#v_visitType").value || "baseline";
+  return {
+    visitType,
+    date: $("#v_date").value || null,
+    hospitalDrug: cleanOptionalText($("#v_hospDrug").value),
+    ldl: safeNum($("#v_ldl").value),
+    ldlTarget: safeNum($("#v_ldlTarget").value),
+    ldlGoalAchieved:
+      $("#v_goalAch").value === "true" ? true : $("#v_goalAch").value === "false" ? false : null,
+    treatment: cleanOptionalText($("#v_treatment").value),
+    adherence: cleanOptionalText($("#v_adherence").value),
+    ram: cleanOptionalText($("#v_ram").value),
+    priorityJustification: cleanOptionalText($("#v_levelWhy").value),
+    oftObjectives: cleanOptionalText($("#v_oft").value),
+    followUpPlan: cleanOptionalText($("#v_follow").value),
+    visitSpecificNotes: getVisitTypeNotes(visitType),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function setVisitDraftStatus(text) {
+  const el = $("#v_draftStatus");
+  if (el) el.textContent = text;
+}
+
+function clearVisitValidationState() {
+  ["#v_date", "#v_visitType", "#v_baselineEval", "#v_m3AdherenceBarriers", "#v_m6LabReview", "#v_m9TherapyAdjustments", "#v_m12AnnualSummary"]
+    .forEach((sel) => $(sel)?.classList.remove("fieldError"));
+}
+
+function validateVisitForm() {
+  clearVisitValidationState();
+  const errors = [];
+  const visitType = $("#v_visitType").value;
+  const date = $("#v_date").value;
+  if (!VISIT_TYPES.includes(visitType)) {
+    errors.push("Tipo de visita inválido.");
+    $("#v_visitType").classList.add("fieldError");
+  }
+  if (!date) {
+    errors.push("Fecha obligatoria.");
+    $("#v_date").classList.add("fieldError");
+  }
+  const specificFieldByType = {
+    baseline: "#v_baselineEval",
+    month3: "#v_m3AdherenceBarriers",
+    month6: "#v_m6LabReview",
+    month9: "#v_m9TherapyAdjustments",
+    month12: "#v_m12AnnualSummary",
+  };
+  const requiredField = specificFieldByType[visitType];
+  if (requiredField && !($(requiredField).value || "").trim()) {
+    errors.push(`Debes completar el campo obligatorio para ${visitType}.`);
+    $(requiredField).classList.add("fieldError");
+  }
+  return errors;
+}
+
+async function persistVisitDraft(patientId, payload) {
+  const draftKey = `visit_draft::${patientId}::${payload.visitType}`;
+  localStorage.setItem(draftKey, JSON.stringify(payload));
+
+  if (!window.supabase) {
+    setVisitDraftStatus("Borrador guardado local (Supabase no disponible).");
+    return { remoteSaved: false };
+  }
+
+  const patient = APP.state.patients.find((p) => p.patientId === patientId);
+  if (!patient?.id) {
+    setVisitDraftStatus("Borrador local guardado (sin UUID paciente).");
+    return { remoteSaved: false };
+  }
+
+  const row = {
+    patient_id: patient.id,
+    visit_type: payload.visitType,
+    payload,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { error } = await window.supabase
+    .from("visit_drafts")
+    .upsert(row, { onConflict: "patient_id,visit_type" });
+
+  if (error) {
+    console.warn("[DRAFT] Supabase save failed, local fallback kept.", error);
+    setVisitDraftStatus("Borrador local guardado (tabla visit_drafts no disponible).");
+    return { remoteSaved: false, error };
+  }
+  setVisitDraftStatus(`Borrador guardado en Supabase (${payload.visitType}).`);
+  return { remoteSaved: true };
+}
+
+async function loadVisitDraft(patientId, visitType) {
+  const draftKey = `visit_draft::${patientId}::${visitType}`;
+  let localDraft = null;
+  try { localDraft = JSON.parse(localStorage.getItem(draftKey) || "null"); } catch {}
+
+  if (window.supabase) {
+    const patient = APP.state.patients.find((p) => p.patientId === patientId);
+    if (patient?.id) {
+      const { data, error } = await window.supabase
+        .from("visit_drafts")
+        .select("payload, updated_at")
+        .eq("patient_id", patient.id)
+        .eq("visit_type", visitType)
+        .maybeSingle();
+      if (!error && data?.payload) return data.payload;
+    }
+  }
+  return localDraft;
+}
+
+async function clearVisitDraft(patientId, visitType) {
+  const draftKey = `visit_draft::${patientId}::${visitType}`;
+  localStorage.removeItem(draftKey);
+  if (!window.supabase) return;
+  const patient = APP.state.patients.find((p) => p.patientId === patientId);
+  if (!patient?.id) return;
+  await window.supabase
+    .from("visit_drafts")
+    .delete()
+    .eq("patient_id", patient.id)
+    .eq("visit_type", visitType);
+}
+
+async function saveVisitDraft() {
+  const patientId = APP.state.selectedPatientId;
+  if (!patientId) return toast("Selecciona un paciente.");
+  const payload = getVisitDraftPayload();
+  await persistVisitDraft(patientId, payload);
+  toast("Borrador guardado.");
+}
+
+async function loadVisitDraftToForm() {
+  const patientId = APP.state.selectedPatientId;
+  if (!patientId) return toast("Selecciona un paciente.");
+  const visitType = $("#v_visitType").value || "baseline";
+  const payload = await loadVisitDraft(patientId, visitType);
+  if (!payload) return toast("No hay borrador para este tipo de visita.");
+
+  $("#v_date").value = payload.date || todayISO();
+  $("#v_hospDrug").value = payload.hospitalDrug || "—";
+  $("#v_ldl").value = payload.ldl ?? "";
+  $("#v_ldlTarget").value = payload.ldlTarget ?? "";
+  $("#v_goalAch").value = payload.ldlGoalAchieved === true ? "true" : payload.ldlGoalAchieved === false ? "false" : "";
+  $("#v_treatment").value = payload.treatment || "";
+  $("#v_adherence").value = payload.adherence || "";
+  $("#v_ram").value = payload.ram || "";
+  $("#v_levelWhy").value = payload.priorityJustification || "";
+  $("#v_oft").value = payload.oftObjectives || "";
+  $("#v_follow").value = payload.followUpPlan || "";
+  $("#v_baselineEval").value = payload.visitType === "baseline" ? (payload.visitSpecificNotes || "") : "";
+  $("#v_m3AdherenceBarriers").value = payload.visitType === "month3" ? (payload.visitSpecificNotes || "") : "";
+  $("#v_m6LabReview").value = payload.visitType === "month6" ? (payload.visitSpecificNotes || "") : "";
+  $("#v_m9TherapyAdjustments").value = payload.visitType === "month9" ? (payload.visitSpecificNotes || "") : "";
+  $("#v_m12AnnualSummary").value = payload.visitType === "month12" ? (payload.visitSpecificNotes || "") : "";
+  setVisitDraftStatus(`Borrador cargado (${payload.updatedAt || "sin fecha"}).`);
+  toast("Borrador cargado.");
+}
+
+function scheduleVisitDraftAutosave() {
+  if (!$("#v_autosave").checked) return;
+  if (APP.state.visitDraftAutosaveTimer) clearTimeout(APP.state.visitDraftAutosaveTimer);
+  APP.state.visitDraftAutosaveTimer = setTimeout(() => {
+    saveVisitDraft();
+  }, 900);
 }
 
 function getDefaultsFromLastVisit(patientId) {
@@ -2181,6 +2409,7 @@ function getDefaultsFromLastVisit(patientId) {
 function generateHCText(patient, visit, interventions) {
   const lines = [];
   lines.push(`Paciente ${patient.patientId} · Patología prevalente: ${patient.prevalentCondition || "—"}`);
+  lines.push(`Tipo visita: ${visit.visitType || "—"}`);
   lines.push(`Fecha visita: ${visit.date || "—"}`);
   lines.push(`Fármaco hospitalario: ${visit.hospitalDrug || "—"}`);
   lines.push(
@@ -2206,6 +2435,7 @@ function generateHCText(patient, visit, interventions) {
 
   if (visit.oftObjectives) lines.push(`OFT: ${visit.oftObjectives}`);
   if (visit.followUpPlan) lines.push(`Plan seguimiento: ${visit.followUpPlan}`);
+  if (visit.visitSpecificNotes) lines.push(`Notas específicas visita: ${visit.visitSpecificNotes}`);
 
   if (interventions.length) {
     lines.push(`Intervenciones CMO:`);
@@ -2229,6 +2459,7 @@ function generateHCFromForm() {
   const lvl = levelFromScoreWithOverrides(score, stratVars);
 
   const visit = {
+    visitType: $("#v_visitType").value || "baseline",
     date: $("#v_date").value || "—",
     hospitalDrug: cleanOptionalText($("#v_hospDrug").value),
     ldl: safeNum($("#v_ldl").value),
@@ -2244,6 +2475,7 @@ function generateHCFromForm() {
     priorityJustification: cleanOptionalText($("#v_levelWhy").value),
     oftObjectives: cleanOptionalText($("#v_oft").value),
     followUpPlan: cleanOptionalText($("#v_follow").value),
+    visitSpecificNotes: getVisitTypeNotes($("#v_visitType").value || "baseline"),
   };
 
   const tempVisitId = `TEMP-${patientId}-${visit.date}`;
@@ -2269,9 +2501,11 @@ async function saveVisit() {
 
   const patientId = APP.state.selectedPatientId;
   if (!patientId) return toast("Selecciona un paciente.");
+  const validationErrors = validateVisitForm();
+  if (validationErrors.length) return toast(validationErrors[0]);
 
+  const visitType = $("#v_visitType").value;
   const date = $("#v_date").value;
-  if (!date) return toast("Fecha obligatoria.");
 
   const patient = APP.state.patients.find((p) => p.patientId === patientId);
   if (!patient?.id) {
@@ -2287,11 +2521,14 @@ async function saveVisit() {
 
   let ldlGoalAchieved = $("#v_goalAch").value;
   ldlGoalAchieved = ldlGoalAchieved === "true" ? true : ldlGoalAchieved === "false" ? false : null;
+  const nextCfg = NEXT_VISIT_BY_TYPE[visitType];
+  const nextVisitSuggested = nextCfg?.monthsToAdd ? addMonthsISO(date, nextCfg.monthsToAdd) : null;
 
   const visit = {
     visitId: makeVisitId(patientId, date),
     patientId,
     patientUuid: patient.id,
+    visitType,
     date,
     hospitalDrug: cleanOptionalText($("#v_hospDrug").value),
     ldl,
@@ -2305,10 +2542,11 @@ async function saveVisit() {
     cmoScore: score,
     priorityLevel,
     priorityJustification: cleanOptionalText($("#v_levelWhy").value),
+    visitSpecificNotes: getVisitTypeNotes(visitType),
 
     oftObjectives: cleanOptionalText($("#v_oft").value),
     followUpPlan: cleanOptionalText($("#v_follow").value),
-    nextVisitSuggested: null,
+    nextVisitSuggested,
 
     createdAt: new Date().toISOString(),
     schemaVersion: APP.schemaVersion,
@@ -2376,11 +2614,13 @@ async function saveVisit() {
     await dbPut(APP.stores.interventions, i);
     APP.state.interventions.push(i);
   }
+  await clearVisitDraft(patientId, visitType);
 
+  const nextLabel = nextCfg?.nextType ? `${nextCfg.nextType} (${nextVisitSuggested})` : "cierre anual";
   closeModal("modalVisit");
   openPatient(patientId);
   updateStats();
-  toast("Visita guardada.");
+  toast(`Visita completada. Próxima sugerida: ${nextLabel}.`);
 }
 
 async function deleteSelectedVisit() {
@@ -2460,6 +2700,7 @@ function visitsForCSV() {
     visitId: v.visitId,
     patientId: v.patientId,
     date: v.date ?? "",
+    visitType: v.visitType ?? "",
     hospitalDrug: v.hospitalDrug ?? "",
     ldl: v.ldl ?? "",
     ldlTarget: v.ldlTarget ?? "",
@@ -2472,6 +2713,7 @@ function visitsForCSV() {
     priorityJustification: v.priorityJustification ?? "",
     oftObjectives: v.oftObjectives ?? "",
     followUpPlan: v.followUpPlan ?? "",
+    nextVisitSuggested: v.nextVisitSuggested ?? "",
     stratVars_json: v.stratVars ? JSON.stringify(v.stratVars) : "",
     createdAt: v.createdAt ?? "",
     schemaVersion: v.schemaVersion ?? "",
@@ -2531,12 +2773,12 @@ function downloadVisitsTemplate() {
   const headers = CSV_SCHEMA.visits.map((f) => f.key);
   const example = {
     visitId: "V-PCSK9-000001-2026-02-20-abc123", patientId: "PCSK9-000001",
-    date: "2026-02-20", hospitalDrug: "Evolocumab 140 mg",
+    date: "2026-02-20", visitType: "month3", hospitalDrug: "Evolocumab 140 mg",
     ldl: "55", ldlTarget: "55", ldlGoalAchieved: "true",
     treatment: "PCSK9 + estatina + ezetimiba", adherence: "Buena", ram: "",
     cmoScore: "18", priorityLevel: "2",
     priorityJustification: "No objetivo + baja adherencia",
-    oftObjectives: "Reducir LDL <55 mg/dL", followUpPlan: "Revisión 3 meses",
+    oftObjectives: "Reducir LDL <55 mg/dL", followUpPlan: "Revisión 3 meses", nextVisitSuggested: "2026-05-20",
     stratVars_json: "", createdAt: "", schemaVersion: "",
   };
   downloadText("visits_template.csv", toCSV([example], headers), "text/csv;charset=utf-8");
@@ -2725,6 +2967,7 @@ async function prepareImportVisitsCSV(file) {
       visitId:               rec.visitId,
       patientId:             rec.patientId,
       date:                  parseFlexDate(rec.date) || rec.date,
+      visitType:             rec.visitType || "baseline",
       hospitalDrug:          rec.hospitalDrug || "—",
       ldl:                   rec.ldl ? safeNum(rec.ldl) : null,
       ldlTarget:             rec.ldlTarget ? safeNum(rec.ldlTarget) : null,
@@ -2737,7 +2980,7 @@ async function prepareImportVisitsCSV(file) {
       priorityJustification: rec.priorityJustification || null,
       oftObjectives:         rec.oftObjectives || null,
       followUpPlan:          rec.followUpPlan || null,
-      nextVisitSuggested:    null,
+      nextVisitSuggested:    parseFlexDate(rec.nextVisitSuggested) || rec.nextVisitSuggested || null,
       stratVars,
       createdAt:    rec.createdAt || new Date().toISOString(),
       schemaVersion: APP.schemaVersion,
@@ -2953,23 +3196,47 @@ function bindPatientsUI() {
   $("#btnBackToList").addEventListener("click", closePatient);
   $("#btnDeletePatient").addEventListener("click", deleteSelectedPatient);
 
-  $("#btnNewVisit").addEventListener("click", () => {
+  $("#btnNewVisit").addEventListener("click", async () => {
     if (!APP.state.selectedPatientId) return toast("Selecciona un paciente.");
     const defaults = getDefaultsFromLastVisit(APP.state.selectedPatientId);
     resetVisitForm(defaults);
     $("#visitForPatient").textContent = `Paciente: ${APP.state.selectedPatientId} (variables precargadas de última visita si existe)`;
+    const existingBaselineDraft = await loadVisitDraft(APP.state.selectedPatientId, "baseline");
+    if (existingBaselineDraft) {
+      setVisitDraftStatus("Borrador baseline detectado. Puedes cargarlo.");
+    }
     openModal("modalVisit");
   });
 
   $("#btnSaveVisit").addEventListener("click", saveVisit);
+  $("#btnSaveVisitDraft").addEventListener("click", saveVisitDraft);
+  $("#btnLoadVisitDraft").addEventListener("click", loadVisitDraftToForm);
+  $("#v_visitType").addEventListener("change", async () => {
+    updateVisitTypePanels();
+    const patientId = APP.state.selectedPatientId;
+    if (!patientId) return;
+    const visitType = $("#v_visitType").value || "baseline";
+    const existingDraft = await loadVisitDraft(patientId, visitType);
+    if (existingDraft) {
+      setVisitDraftStatus(`Borrador detectado para ${visitType}. Usa "Cargar borrador".`);
+    } else {
+      setVisitDraftStatus(`Sin borrador para ${visitType}.`);
+    }
+    scheduleVisitDraftAutosave();
+  });
+  $("#v_autosave").addEventListener("change", () => {
+    setVisitDraftStatus($("#v_autosave").checked ? "Autosave activo." : "Autosave inactivo.");
+  });
 
   $("#btnGenerateHC").addEventListener("click", generateHCFromForm);
   $("#btnCopyHC").addEventListener("click", copyHC);
 
-  // no-op hooks (por si luego quieres lógica automática)
-  ["#v_ldl", "#v_ldlTarget", "#v_goalAch", "#v_hospDrug"].forEach((sel) => {
+  ["#v_date", "#v_hospDrug", "#v_ldl", "#v_ldlTarget", "#v_goalAch", "#v_treatment", "#v_adherence", "#v_ram", "#v_levelWhy", "#v_oft", "#v_follow", "#v_baselineEval", "#v_m3AdherenceBarriers", "#v_m6LabReview", "#v_m9TherapyAdjustments", "#v_m12AnnualSummary"].forEach((sel) => {
     const el = $(sel);
-    if (el) el.addEventListener("change", () => {});
+    if (el) {
+      el.addEventListener("change", scheduleVisitDraftAutosave);
+      el.addEventListener("input", scheduleVisitDraftAutosave);
+    }
   });
 }
 
