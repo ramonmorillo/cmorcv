@@ -470,6 +470,9 @@ function esc(s) {
   d.textContent = s;
   return d.innerHTML;
 }
+function escAttr(s) {
+  return esc(String(s ?? "")).replace(/"/g, "&quot;");
+}
 
 function todayISO() {
   const d = new Date();
@@ -1636,16 +1639,16 @@ function renderPatientsTable() {
     const lastDate = last?.date ?? "—";
 
     tr.innerHTML = `
-      <td><span class="link" data-open-patient="${p.patientId}">${p.patientId}</span></td>
-      <td>${p.prevalentCondition || "—"}</td>
-      <td>${p.sex || "—"}</td>
-      <td>${p.birthYear || "—"}</td>
+      <td><span class="link" data-open-patient="${escAttr(p.patientId)}">${esc(p.patientId)}</span></td>
+      <td>${esc(p.prevalentCondition || "—")}</td>
+      <td>${esc(p.sex || "—")}</td>
+      <td>${esc(p.birthYear || "—")}</td>
       <td>${fmtDate(lastDate)}</td>
-      <td>${lvl === "—" ? "—" : `Nivel ${lvl}`}</td>
-      <td>${score}</td>
-      <td>${ldl}</td>
-      <td>${tgt}</td>
-      <td>${p.status === "inactive" ? "Inactivo" : "Activo"}</td>
+      <td>${esc(lvl === "—" ? "—" : `Nivel ${lvl}`)}</td>
+      <td>${esc(score)}</td>
+      <td>${esc(ldl)}</td>
+      <td>${esc(tgt)}</td>
+      <td>${esc(p.status === "inactive" ? "Inactivo" : "Activo")}</td>
     `;
     tbody.appendChild(tr);
   }
@@ -1707,19 +1710,19 @@ function renderVisitsTable(patientId) {
     const goalTxt = goal === true ? "Sí" : goal === false ? "No" : "—";
 
     tr.innerHTML = `
-      <td>${v.date || "—"}</td>
-      <td>${v.hospitalDrug || "—"}</td>
-      <td>${v.ldl ?? "—"}</td>
-      <td>${v.ldlTarget ?? "—"}</td>
-      <td>${goalTxt}</td>
-      <td>${v.cmoScore ?? "—"}</td>
-      <td>${v.priorityLevel ? `Nivel ${v.priorityLevel}` : "—"}</td>
-      <td title="${(v.treatment || "").slice(0, 160)}">${(v.treatment || "—").slice(0, 38)}${
+      <td>${esc(v.date || "—")}</td>
+      <td>${esc(v.hospitalDrug || "—")}</td>
+      <td>${esc(v.ldl ?? "—")}</td>
+      <td>${esc(v.ldlTarget ?? "—")}</td>
+      <td>${esc(goalTxt)}</td>
+      <td>${esc(v.cmoScore ?? "—")}</td>
+      <td>${esc(v.priorityLevel ? `Nivel ${v.priorityLevel}` : "—")}</td>
+      <td title="${escAttr((v.treatment || "").slice(0, 160))}">${esc((v.treatment || "—").slice(0, 38))}${
       (v.treatment || "").length > 38 ? "…" : ""
     }</td>
-      <td>${v.adherence || "—"}</td>
-      <td>${v.ram || "—"}</td>
-      <td><span class="link" data-open-visit="${v.visitId}">Ver</span></td>
+      <td>${esc(v.adherence || "—")}</td>
+      <td>${esc(v.ram || "—")}</td>
+      <td><span class="link" data-open-visit="${escAttr(v.visitId)}">Ver</span></td>
     `;
     tbody.appendChild(tr);
   }
@@ -1738,20 +1741,20 @@ function openVisitDetail(visitId) {
 
   const kv = $("#vd_kv");
   kv.innerHTML = `
-    <div class="k">Fármaco hospitalario</div><div class="v">${v.hospitalDrug || "—"}</div>
-    <div class="k">LDL</div><div class="v">${v.ldl ?? "—"}</div>
-    <div class="k">Objetivo LDL</div><div class="v">${v.ldlTarget ?? "—"}</div>
+    <div class="k">Fármaco hospitalario</div><div class="v">${esc(v.hospitalDrug || "—")}</div>
+    <div class="k">LDL</div><div class="v">${esc(v.ldl ?? "—")}</div>
+    <div class="k">Objetivo LDL</div><div class="v">${esc(v.ldlTarget ?? "—")}</div>
     <div class="k">¿Cumple objetivo?</div><div class="v">${
-      v.ldlGoalAchieved === true ? "Sí" : v.ldlGoalAchieved === false ? "No" : "—"
+      esc(v.ldlGoalAchieved === true ? "Sí" : v.ldlGoalAchieved === false ? "No" : "—")
     }</div>
-    <div class="k">Score</div><div class="v">${v.cmoScore ?? "—"}</div>
-    <div class="k">Nivel</div><div class="v">${v.priorityLevel ? `Nivel ${v.priorityLevel}` : "—"}</div>
-    <div class="k">Justificación</div><div class="v">${v.priorityJustification || "—"}</div>
-    <div class="k">Tratamiento (texto)</div><div class="v">${v.treatment || "—"}</div>
-    <div class="k">Adherencia</div><div class="v">${v.adherence || "—"}</div>
-    <div class="k">RAM</div><div class="v">${v.ram || "—"}</div>
-    <div class="k">OFT</div><div class="v">${v.oftObjectives || "—"}</div>
-    <div class="k">Plan seguimiento</div><div class="v">${v.followUpPlan || "—"}</div>
+    <div class="k">Score</div><div class="v">${esc(v.cmoScore ?? "—")}</div>
+    <div class="k">Nivel</div><div class="v">${esc(v.priorityLevel ? `Nivel ${v.priorityLevel}` : "—")}</div>
+    <div class="k">Justificación</div><div class="v">${esc(v.priorityJustification || "—")}</div>
+    <div class="k">Tratamiento (texto)</div><div class="v">${esc(v.treatment || "—")}</div>
+    <div class="k">Adherencia</div><div class="v">${esc(v.adherence || "—")}</div>
+    <div class="k">RAM</div><div class="v">${esc(v.ram || "—")}</div>
+    <div class="k">OFT</div><div class="v">${esc(v.oftObjectives || "—")}</div>
+    <div class="k">Plan seguimiento</div><div class="v">${esc(v.followUpPlan || "—")}</div>
   `;
 
   const ints = visitInterventions(visitId);
@@ -2383,6 +2386,21 @@ async function saveVisit() {
   toast("Visita guardada.");
 }
 
+async function deleteVisitFromSupabase(v) {
+  if (!window.supabase || !v) return;
+  let query = window.supabase.from("visits").delete();
+  if (v.id) {
+    query = query.eq("id", v.id);
+  } else if (v.visitId) {
+    query = query.eq("local_visit_code", v.visitId);
+    if (v.patientUuid) query = query.eq("patient_id", v.patientUuid);
+  } else {
+    throw new Error("No hay identificador remoto de visita.");
+  }
+  const { error } = await query;
+  if (error) throw error;
+}
+
 async function deleteSelectedVisit() {
   const visitId = APP.state.selectedVisitId;
   if (!visitId) return;
@@ -2392,6 +2410,13 @@ async function deleteSelectedVisit() {
 
   if (!confirm("¿Eliminar esta visita y sus intervenciones?")) return;
 
+  try {
+    await deleteVisitFromSupabase(v);
+  } catch (error) {
+    console.error("[VISITS] delete failed in Supabase:", error);
+    return alert(`No se pudo eliminar la visita en Supabase: ${error.message || "error desconocido"}`);
+  }
+
   const ints = visitInterventions(visitId);
   for (const i of ints) await dbDelete(APP.stores.interventions, i.interventionId);
   APP.state.interventions = APP.state.interventions.filter((i) => i.visitId !== visitId);
@@ -2399,6 +2424,7 @@ async function deleteSelectedVisit() {
   await dbDelete(APP.stores.visits, visitId);
   APP.state.visits = APP.state.visits.filter((x) => x.visitId !== visitId);
 
+  await loadAll();
   closeModal("modalVisitDetail");
   toast("Visita eliminada.");
   openPatient(v.patientId);
@@ -2419,6 +2445,20 @@ async function deleteSelectedPatient() {
     `¿Eliminar el paciente "${patientId}" con ${visits.length} visita(s) y ${intCount} intervención(es)?\n\nEsta acción es irreversible.`;
   if (!confirm(msg)) return;
 
+  try {
+    if (!window.supabase || !p.id) {
+      throw new Error("No se puede identificar el registro remoto del paciente.");
+    }
+    const { error } = await window.supabase
+      .from("patients")
+      .delete()
+      .eq("id", p.id);
+    if (error) throw error;
+  } catch (error) {
+    console.error("[PATIENTS] delete failed in Supabase:", error);
+    return alert(`No se pudo eliminar el paciente en Supabase: ${error.message || "error desconocido"}`);
+  }
+
   // Delete all interventions for this patient
   const ints = APP.state.interventions.filter((i) => i.patientId === patientId);
   for (const i of ints) await dbDelete(APP.stores.interventions, i.interventionId);
@@ -2432,6 +2472,7 @@ async function deleteSelectedPatient() {
   await dbDelete(APP.stores.patients, patientId);
   APP.state.patients = APP.state.patients.filter((x) => x.patientId !== patientId);
 
+  await loadAll();
   closePatient();
   fillConditionSelectors();
   updateStats();
