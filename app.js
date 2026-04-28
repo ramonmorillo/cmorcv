@@ -341,6 +341,7 @@ const APP = {
     centerId: null,
     centerName: null,
     visitsSchema: null,
+    patientsSoftDeleteAvailable: null,
     appInitialized: false,
     authUiBound: false,
   },
@@ -564,6 +565,27 @@ async function loadVisitsSchema() {
   console.log("[VISITS SCHEMA] verification OK (minimal required schema available)");
   APP.state.visitsSchema = schema;
   return schema;
+}
+
+async function hasPatientsDeletedAtColumn() {
+  if (APP.state.patientsSoftDeleteAvailable !== null) {
+    return APP.state.patientsSoftDeleteAvailable;
+  }
+  if (!window.supabase) return false;
+
+  const { error } = await window.supabase
+    .from("patients")
+    .select("deleted_at")
+    .limit(1);
+
+  if (error) {
+    APP.state.patientsSoftDeleteAvailable = false;
+    console.warn("[PATIENTS] deleted_at column not available in patients.", error);
+    return false;
+  }
+
+  APP.state.patientsSoftDeleteAvailable = true;
+  return true;
 }
 
 function buildVisitInsertRow(visit, patientUuid, authUser, schema) {
@@ -1963,26 +1985,29 @@ async function savePatient() {
   }
 
   const patientRow = buildPatientInsertRow(p, user, profile);
+  const softDeleteAvailable = await hasPatientsDeletedAtColumn();
 
   // Soft delete aware lookup:
   // - active row => block with user-friendly message
   // - soft-deleted row => restore same row (no duplicate historical records)
-  const { data: existingRow, error: existingLookupError } = await window.supabase
+  let existingLookupQuery = window.supabase
     .from("patients")
     .select("*")
     .eq("center_id", profile.center_id)
-    .eq("local_patient_code", patientRow.local_patient_code)
-    .maybeSingle();
+    .eq("local_patient_code", patientRow.local_patient_code);
+  if (softDeleteAvailable) existingLookupQuery = existingLookupQuery.limit(1);
+  const { data: existingRows, error: existingLookupError } = await existingLookupQuery;
   if (existingLookupError && existingLookupError.code !== "PGRST116") {
     console.error("Supabase patients lookup failed before insert:", existingLookupError);
     return toast("No se pudo comprobar si el paciente ya existía. Inténtalo de nuevo.");
   }
+  const existingRow = Array.isArray(existingRows) ? existingRows[0] : existingRows;
 
-  if (existingRow && !existingRow.deleted_at) {
+  if (existingRow && (!softDeleteAvailable || !existingRow.deleted_at)) {
     return toast("Ya existe un paciente activo con ese ID.");
   }
 
-  if (existingRow && existingRow.deleted_at) {
+  if (softDeleteAvailable && existingRow && existingRow.deleted_at) {
     const restorePatch = {
       deleted_at: null,
       sex: patientRow.sex,
@@ -2495,6 +2520,11 @@ async function deleteSelectedPatient() {
     toast("No se pudo eliminar: no hay centro activo.");
     return;
   }
+  const softDeleteAvailable = await hasPatientsDeletedAtColumn();
+  if (!softDeleteAvailable) {
+    toast("No se puede eliminar de forma persistente: falta columna deleted_at en Supabase.");
+    return;
+  }
 
   const { data: updatedRows, error: softDeleteError } = await window.supabase
     .from("patients")
@@ -2998,27 +3028,37 @@ async function loadAll() {
     APP.state.interventions = await dbGetAll(APP.stores.interventions);
     return;
   } else {
-    const { data: patientRows, error: patientsError } = await window.supabase
+    const softDeleteAvailable = await hasPatientsDeletedAtColumn();
+    let patientsQuery = window.supabase
       .from('patients')
       .select('*')
       .eq('center_id', centerId)
-      .is('deleted_at', null)
       .order('created_at', { ascending: false });
+    if (softDeleteAvailable) {
+      patientsQuery = patientsQuery.is('deleted_at', null);
+    }
+    const { data: patientRows, error: patientsError } = await patientsQuery;
     if (patientsError) {
       console.error("[DATA] patients load error:", patientsError);
       APP.state.patients = [];
     } else {
       APP.state.patients = (patientRows || []).map(mapPatientRowToFrontend).filter(Boolean);
       console.log("[DATA] patients loaded from Supabase:", APP.state.patients.length);
+      for (const p of APP.state.patients) {
+        await dbPut(APP.stores.patients, p);
+      }
     }
 
     await loadVisitsSchema();
-    const { data: visitRows, error: visitsError } = await window.supabase
+    let visitsQuery = window.supabase
       .from("visits")
       .select("*, patients!inner(id, center_id)")
       .eq("patients.center_id", centerId)
-      .is("patients.deleted_at", null)
       .order("created_at", { ascending: false });
+    if (softDeleteAvailable) {
+      visitsQuery = visitsQuery.is("patients.deleted_at", null);
+    }
+    const { data: visitRows, error: visitsError } = await visitsQuery;
     if (visitsError) {
       console.error("[DATA] visits load error:", visitsError);
       APP.state.visits = [];
