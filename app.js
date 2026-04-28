@@ -494,6 +494,7 @@ function mapPatientRowToFrontend(row) {
     comorbidities: null,
     notes: null,
     status: row.active === false ? "inactive" : "active",
+    deletedAt: row.deleted_at ?? null,
     stratVars: {},
     cmoScore: 0,
     priorityLevel: 3,
@@ -2416,25 +2417,65 @@ async function deleteSelectedPatient() {
   const intCount = APP.state.interventions.filter((i) => i.patientId === patientId).length;
 
   const msg =
-    `¿Eliminar el paciente "${patientId}" con ${visits.length} visita(s) y ${intCount} intervención(es)?\n\nEsta acción es irreversible.`;
+    `¿Eliminar (soft delete) el paciente "${patientId}" con ${visits.length} visita(s) y ${intCount} intervención(es)?\n\n` +
+    "El paciente dejará de mostrarse, pero se conservará trazabilidad clínica.";
   if (!confirm(msg)) return;
 
-  // Delete all interventions for this patient
-  const ints = APP.state.interventions.filter((i) => i.patientId === patientId);
-  for (const i of ints) await dbDelete(APP.stores.interventions, i.interventionId);
-  APP.state.interventions = APP.state.interventions.filter((i) => i.patientId !== patientId);
+  if (!window.supabase) {
+    console.error("[PATIENT_DELETE] Supabase client not ready.", { patientId, patientUuid: p.id });
+    toast("No se pudo eliminar: cliente de Supabase no disponible.");
+    return;
+  }
+  if (!p.id) {
+    console.error("[PATIENT_DELETE] Missing patient UUID in selected patient.", { patientId, patient: p });
+    toast("No se pudo eliminar: falta identificador interno del paciente.");
+    return;
+  }
+  if (!APP.state.centerId) {
+    console.error("[PATIENT_DELETE] Missing active center_id in app state.", { patientId, patientUuid: p.id });
+    toast("No se pudo eliminar: no hay centro activo.");
+    return;
+  }
 
-  // Delete all visits for this patient
-  for (const v of visits) await dbDelete(APP.stores.visits, v.visitId);
-  APP.state.visits = APP.state.visits.filter((v) => v.patientId !== patientId);
+  const { data: updatedRows, error: softDeleteError } = await window.supabase
+    .from("patients")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("id", p.id)
+    .eq("center_id", APP.state.centerId)
+    .is("deleted_at", null)
+    .select("id")
+    .limit(1);
+  if (softDeleteError) {
+    console.error("[PATIENT_DELETE] Supabase soft delete failed.", {
+      patientId,
+      patientUuid: p.id,
+      centerId: APP.state.centerId,
+      error: softDeleteError,
+    });
+    toast(`Error eliminando paciente: ${softDeleteError.message || "error desconocido"}.`);
+    return;
+  }
+  if (!updatedRows || updatedRows.length === 0) {
+    console.error("[PATIENT_DELETE] No patient row updated (RLS/ownership/already deleted).", {
+      patientId,
+      patientUuid: p.id,
+      centerId: APP.state.centerId,
+    });
+    toast("No se pudo eliminar el paciente (sin permisos o ya eliminado).");
+    return;
+  }
 
-  // Delete the patient
+  // Remove only from UI/local patient cache; related visits/interventions stay in Supabase (traceability).
   await dbDelete(APP.stores.patients, patientId);
   APP.state.patients = APP.state.patients.filter((x) => x.patientId !== patientId);
+  APP.state.visits = APP.state.visits.filter((v) => v.patientId !== patientId);
+  APP.state.interventions = APP.state.interventions.filter((i) => i.patientId !== patientId);
 
   closePatient();
   fillConditionSelectors();
   updateStats();
+  renderDashboard();
+  renderInterventions();
   renderPatientsTable();
   toast("Paciente eliminado.");
 }
@@ -2902,6 +2943,7 @@ async function loadAll() {
       .from('patients')
       .select('*')
       .eq('center_id', centerId)
+      .is('deleted_at', null)
       .order('created_at', { ascending: false });
     if (patientsError) {
       console.error("[DATA] patients load error:", patientsError);
@@ -2916,6 +2958,7 @@ async function loadAll() {
       .from("visits")
       .select("*, patients!inner(id, center_id)")
       .eq("patients.center_id", centerId)
+      .is("patients.deleted_at", null)
       .order("created_at", { ascending: false });
     if (visitsError) {
       console.error("[DATA] visits load error:", visitsError);
@@ -2929,7 +2972,9 @@ async function loadAll() {
       }
     }
   }
-  APP.state.interventions = await dbGetAll(APP.stores.interventions);
+  const activePatientIds = new Set(APP.state.patients.map((p) => p.patientId));
+  APP.state.interventions = (await dbGetAll(APP.stores.interventions))
+    .filter((i) => activePatientIds.has(i.patientId));
 }
 
 function bindNav() {
