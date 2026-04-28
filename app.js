@@ -1927,21 +1927,21 @@ async function savePatient() {
   // (e.g. visits / stratifications / interventions) instead of forcing these app-level fields into patients.
 
   const exists = APP.state.patients.some((x) => x.patientId === patientId);
-  if (exists) return toast("Ese ID ya existe.");
+  if (exists) return toast("Ya existe un paciente activo con ese ID.");
 
   if (!window.supabase) {
     console.error("Supabase client not ready while saving patient.");
-    return alert("Error: cliente de Supabase no está listo.");
+    return toast("No se pudo guardar el paciente. Inténtalo de nuevo.");
   }
 
   const { data: { user }, error: userError } = await window.supabase.auth.getUser();
   if (userError) {
     console.error("Supabase auth.getUser() error:", userError);
-    return alert("No se pudo validar la sesión del usuario. Vuelve a iniciar sesión.");
+    return toast("No se pudo validar la sesión. Vuelve a iniciar sesión.");
   }
   if (!user) {
     console.error("Patient insert blocked: no authenticated user.");
-    return alert("No hay usuario autenticado. Inicia sesión para guardar pacientes.");
+    return toast("No hay usuario autenticado. Inicia sesión para guardar pacientes.");
   }
 
   const { data: profile, error: profileError } = await window.supabase
@@ -1951,18 +1951,74 @@ async function savePatient() {
     .single();
   if (profileError) {
     console.error("Supabase profiles lookup error:", profileError);
-    return alert("No se pudo cargar tu perfil de usuario para guardar el paciente.");
+    return toast("No se pudo cargar tu perfil para guardar el paciente.");
   }
   if (!profile) {
     console.error("Patient insert blocked: missing profile for user", user.id);
-    return alert("Perfil de usuario no encontrado. Contacta al administrador.");
+    return toast("Perfil de usuario no encontrado. Contacta al administrador.");
   }
   if (!profile.center_id) {
     console.error("Patient insert blocked: profile missing center_id", profile);
-    return alert("Tu perfil no tiene center_id asignado. Contacta al administrador.");
+    return toast("Tu perfil no tiene centro asignado. Contacta al administrador.");
   }
 
   const patientRow = buildPatientInsertRow(p, user, profile);
+
+  // Soft delete aware lookup:
+  // - active row => block with user-friendly message
+  // - soft-deleted row => restore same row (no duplicate historical records)
+  const { data: existingRow, error: existingLookupError } = await window.supabase
+    .from("patients")
+    .select("*")
+    .eq("center_id", profile.center_id)
+    .eq("local_patient_code", patientRow.local_patient_code)
+    .maybeSingle();
+  if (existingLookupError && existingLookupError.code !== "PGRST116") {
+    console.error("Supabase patients lookup failed before insert:", existingLookupError);
+    return toast("No se pudo comprobar si el paciente ya existía. Inténtalo de nuevo.");
+  }
+
+  if (existingRow && !existingRow.deleted_at) {
+    return toast("Ya existe un paciente activo con ese ID.");
+  }
+
+  if (existingRow && existingRow.deleted_at) {
+    const restorePatch = {
+      deleted_at: null,
+      sex: patientRow.sex,
+      birth_year: patientRow.birth_year,
+      baseline_date: patientRow.baseline_date,
+      active: true,
+    };
+    const { data: restoredRow, error: restoreError } = await window.supabase
+      .from("patients")
+      .update(restorePatch)
+      .eq("id", existingRow.id)
+      .eq("center_id", profile.center_id)
+      .select()
+      .single();
+    if (restoreError) {
+      console.error("Supabase patients.restore failed:", {
+        existingPatientId: existingRow.id,
+        restorePatch,
+        error: restoreError,
+      });
+      return toast("No se pudo recuperar el paciente eliminado. Inténtalo de nuevo.");
+    }
+    const restoredPatient = mapPatientRowToFrontend(restoredRow);
+    if (!restoredPatient) {
+      console.error("Supabase restore returned empty patient row:", restoredRow);
+      return toast("El paciente se recuperó, pero no se pudo procesar la respuesta.");
+    }
+
+    await loadAll();
+    fillConditionSelectors();
+    updateStats();
+    renderPatientsTable();
+    closeModal("modalPatient");
+    toast("Paciente recuperado y actualizado.");
+    return;
+  }
 
   const { data, error } = await window.supabase
     .from('patients')
@@ -1971,13 +2027,16 @@ async function savePatient() {
     .single();
   if (error) {
     console.error("Supabase patients.insert rejected:", error);
-    return alert(`Supabase rechazó el alta del paciente: ${error.message || "error desconocido"}`);
+    if (error.code === "23505") {
+      return toast("Ya existe un paciente con ese ID en este centro.");
+    }
+    return toast("No se pudo guardar el paciente. Inténtalo de nuevo.");
   }
 
   const savedPatient = mapPatientRowToFrontend(data);
   if (!savedPatient) {
     console.error("Supabase insert returned empty patient row:", data);
-    return alert("El paciente se guardó, pero no se pudo procesar la respuesta.");
+    return toast("El paciente se guardó, pero no se pudo procesar la respuesta.");
   }
   await loadAll();
 
