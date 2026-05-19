@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Herramienta seguimiento CMO para RCV</title>
-  <link rel="stylesheet" href="./styles.css?v=20260409_1200" />
+  <link rel="stylesheet" href="./styles.css?v=20260417_1015" />
 </head>
 <body>
   <div id="loginGate" class="panel" style="max-width:420px;margin:40px auto;padding:20px">
@@ -212,6 +212,26 @@
                     <div class="chartWrap">
                       <canvas id="ldlChart" width="900" height="240"></canvas>
                       <div class="smallMuted">Evolución LDL (mg/dL). (Gráfico local, sin librerías externas).</div>
+                    </div>
+
+                    <div class="divider"></div>
+                    <div class="sectionTitle">Cuestionarios (tendencia)</div>
+                    <div class="chartWrap">
+                      <canvas id="questionnaireTrendChart" width="900" height="240"></canvas>
+                      <div class="smallMuted">Morisky (0–4, mayor peor adherencia) e IEXPAC global (0–10, mayor mejor experiencia).</div>
+                    </div>
+                    <div class="tableWrap">
+                      <table class="table" id="questionnaireTrendTable">
+                        <thead>
+                          <tr>
+                            <th>Fecha</th>
+                            <th>Morisky</th>
+                            <th>Nivel adherencia</th>
+                            <th>IEXPAC global</th>
+                          </tr>
+                        </thead>
+                        <tbody></tbody>
+                      </table>
                     </div>
                   </div>
                 </div>
@@ -795,6 +815,47 @@
               </div>
 
               <div class="field span2">
+                <label>Morisky (MMAS-4)</label>
+                <div class="questionnaireCard">
+                  <div class="smallMuted" style="margin-bottom:8px">Marca “Sí” si ocurrió en el último periodo.</div>
+                  <div class="questionnaireRow">
+                    <span class="questionnaireLabel">1. ¿Olvida alguna vez tomar la medicación?</span>
+                    <select class="select q-morisky" id="v_morisky_q1">
+                      <option value="">—</option><option value="yes">Sí</option><option value="no">No</option>
+                    </select>
+                  </div>
+                  <div class="questionnaireRow">
+                    <span class="questionnaireLabel">2. ¿Es descuidado/a con los horarios de toma?</span>
+                    <select class="select q-morisky" id="v_morisky_q2">
+                      <option value="">—</option><option value="yes">Sí</option><option value="no">No</option>
+                    </select>
+                  </div>
+                  <div class="questionnaireRow">
+                    <span class="questionnaireLabel">3. Cuando se encuentra bien, ¿deja de tomar la medicación?</span>
+                    <select class="select q-morisky" id="v_morisky_q3">
+                      <option value="">—</option><option value="yes">Sí</option><option value="no">No</option>
+                    </select>
+                  </div>
+                  <div class="questionnaireRow">
+                    <span class="questionnaireLabel">4. Si le sienta mal, ¿deja de tomar la medicación?</span>
+                    <select class="select q-morisky" id="v_morisky_q4">
+                      <option value="">—</option><option value="yes">Sí</option><option value="no">No</option>
+                    </select>
+                  </div>
+                  <div class="questionnaireSummary" id="v_morisky_summary">Morisky: pendiente</div>
+                </div>
+              </div>
+
+              <div class="field span2">
+                <label>IEXPAC (11 ítems, 1–5)</label>
+                <div class="questionnaireCard">
+                  <div class="smallMuted" style="margin-bottom:8px">1=Nunca · 2=Casi nunca · 3=A veces · 4=Casi siempre · 5=Siempre</div>
+                  <div class="questionnaireGrid" id="iexpacGrid"></div>
+                  <div class="questionnaireSummary" id="v_iexpac_summary">IEXPAC: pendiente</div>
+                </div>
+              </div>
+
+              <div class="field span2">
                 <label>Intervenciones CMO (selecciona y define estado)</label>
                 <div class="interventionsWrap" id="interventionsPicker"></div>
               </div>
@@ -853,6 +914,6 @@
     window.supabase = createClient(supabaseUrl, supabaseKey);
     window.dispatchEvent(new Event('supabaseReady'));
   </script>
-  <script src="./app.js?v=20260409_1200"></script>
+  <script src="./app.js?v=20260417_1015"></script>
 </body>
 </html>
