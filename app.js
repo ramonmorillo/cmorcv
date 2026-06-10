@@ -4,7 +4,7 @@
    Versión Supabase — GitHub Pages friendly
 */
 
-const APP_VERSION = "20260409_1200";
+const APP_VERSION = "20260610_1200";
 const IS_DEV = typeof window !== "undefined" &&
   (location.hostname === "localhost" || location.hostname === "127.0.0.1" ||
    new URLSearchParams(location.search).has("debug"));
@@ -342,6 +342,8 @@ const APP = {
     centerName: null,
     visitsSchema: null,
     patientsSoftDeleteAvailable: null,
+    patientsSchema: null,
+    pseudonymizationSecret: null,
     appInitialized: false,
     authUiBound: false,
   },
@@ -472,6 +474,88 @@ function esc(s) {
   return d.innerHTML;
 }
 
+const PSEUDONYMIZATION = {
+  namespace: "CMORCV-RCV-v1",
+  version: "v1",
+  idScheme: "pseudonymized_v1",
+  legacyIdScheme: "legacy_manual",
+  prefix: "RCV-",
+  hexChars: 16,
+  sessionStorageKey: "cmorcv_pseudonymization_secret_session",
+};
+
+function normalizePatientCode(code) {
+  return String(code ?? "").trim().toUpperCase();
+}
+
+function getPatientDisplayId(patient) {
+  if (!patient) return "";
+  return patient.patient_id || patient.patientId || patient.id || patient.legacy_id || "";
+}
+
+function isPseudonymizationActive() {
+  return Boolean(APP.state.pseudonymizationSecret);
+}
+
+function loadPseudonymizationSecretFromSession() {
+  try {
+    const value = sessionStorage.getItem(PSEUDONYMIZATION.sessionStorageKey);
+    APP.state.pseudonymizationSecret = value || null;
+  } catch (e) {
+    console.warn("[PSEUDONYMIZATION] sessionStorage unavailable; secret kept only in memory.", e);
+    APP.state.pseudonymizationSecret = APP.state.pseudonymizationSecret || null;
+  }
+}
+
+function setPseudonymizationSecret(secret, persistInSession = false) {
+  const cleanSecret = String(secret ?? "").trim();
+  APP.state.pseudonymizationSecret = cleanSecret || null;
+  try {
+    if (persistInSession && cleanSecret) {
+      sessionStorage.setItem(PSEUDONYMIZATION.sessionStorageKey, cleanSecret);
+    } else {
+      sessionStorage.removeItem(PSEUDONYMIZATION.sessionStorageKey);
+    }
+  } catch (e) {
+    console.warn("[PSEUDONYMIZATION] could not update sessionStorage; secret kept only in memory.", e);
+  }
+  renderPseudonymizationConfig();
+}
+
+function renderPseudonymizationConfig() {
+  const statusEl = $("#pseudoStatus");
+  const hintEl = $("#pseudoStatusHint");
+  const active = isPseudonymizationActive();
+  if (statusEl) {
+    statusEl.textContent = active ? "Clave activa" : "Clave no activa";
+    statusEl.className = `chip ${active ? "ok" : "no"}`;
+  }
+  if (hintEl) {
+    hintEl.textContent = active
+      ? "La clave está cargada localmente. Supabase solo recibirá pseudónimos RCV-."
+      : "Activa una clave local antes de crear pacientes nuevos o buscar por código local.";
+  }
+  const btn = $("#btnSavePatient");
+  if (btn) btn.disabled = !active;
+}
+
+async function sha256Hex(input) {
+  if (!crypto?.subtle) throw new Error("Web Crypto API no disponible en este navegador.");
+  const data = new TextEncoder().encode(input);
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function generatePatientPseudonym(originalCode, secret = APP.state.pseudonymizationSecret) {
+  const cleanCode = normalizePatientCode(originalCode);
+  const cleanSecret = String(secret ?? "").trim();
+  if (!cleanCode) throw new Error("Código local/original obligatorio.");
+  if (!cleanSecret) throw new Error("Clave local de pseudonimización no activa.");
+  const material = `${PSEUDONYMIZATION.namespace}|${cleanCode}|${cleanSecret}`;
+  const hex = await sha256Hex(material);
+  return `${PSEUDONYMIZATION.prefix}${hex.slice(0, PSEUDONYMIZATION.hexChars).toUpperCase()}`;
+}
+
 function todayISO() {
   const d = new Date();
   const yyyy = d.getFullYear();
@@ -488,7 +572,12 @@ function mapPatientRowToFrontend(row) {
     created_by: row.created_by ?? null,
     created_at: row.created_at ?? null,
     updated_at: row.updated_at ?? null,
-    patientId: row.local_patient_code || "",
+    patient_id: row.local_patient_code || row.patient_id || "",
+    patientId: row.local_patient_code || row.patient_id || "",
+    legacy_id: row.legacy_id ?? null,
+    idScheme: row.id_scheme || (String(row.local_patient_code || "").startsWith(PSEUDONYMIZATION.prefix) ? PSEUDONYMIZATION.idScheme : PSEUDONYMIZATION.legacyIdScheme),
+    pseudonymizationVersion: row.pseudonymization_version || null,
+    pseudonymizationNamespace: row.pseudonymization_namespace || null,
     prevalentCondition: "",
     sex: row.sex || null,
     birthYear: row.birth_year ?? null,
@@ -621,6 +710,32 @@ function buildVisitInsertRow(visit, patientUuid, authUser, schema) {
   return out;
 }
 
+async function loadPatientsSchema() {
+  if (APP.state.patientsSchema) return APP.state.patientsSchema;
+  if (!window.supabase) return null;
+  const optionalCandidates = ["id_scheme", "pseudonymization_version", "pseudonymization_namespace"];
+  const schema = { optional: new Set(), optionalCandidates };
+  for (const col of optionalCandidates) {
+    const { error } = await window.supabase.from("patients").select(col).limit(1);
+    if (!error) {
+      schema.optional.add(col);
+    } else {
+      console.warn(`[PATIENTS SCHEMA] optional column unavailable: patients.${col}`, error);
+    }
+  }
+  APP.state.patientsSchema = schema;
+  return schema;
+}
+
+function filterPatientRowBySchema(row, schema) {
+  const out = { ...row };
+  const optional = schema?.optional || new Set();
+  for (const col of ["id_scheme", "pseudonymization_version", "pseudonymization_namespace"]) {
+    if (!optional.has(col)) delete out[col];
+  }
+  return out;
+}
+
 function buildPatientInsertRow(patientFormState, authUser, profile) {
   const birthYear = patientFormState.birthYear;
   const numericBirthYear = birthYear === null || birthYear === undefined || birthYear === ""
@@ -639,6 +754,9 @@ function buildPatientInsertRow(patientFormState, authUser, profile) {
     baseline_date: baselineDate,
     active: true,
     created_by: authUser.id,
+    id_scheme: patientFormState.idScheme || PSEUDONYMIZATION.idScheme,
+    pseudonymization_version: patientFormState.pseudonymizationVersion || PSEUDONYMIZATION.version,
+    pseudonymization_namespace: patientFormState.pseudonymizationNamespace || PSEUDONYMIZATION.namespace,
   };
 }
 
@@ -840,6 +958,10 @@ function validateCSVImport(records, schemaFields) {
 const CSV_SCHEMA = {
   patients: [
     { key: "patientId",           required: true,  type: "string" },
+    { key: "patient_id",          required: false, type: "string" },
+    { key: "id_scheme",           required: false, type: "string" },
+    { key: "pseudonymization_version", required: false, type: "string" },
+    { key: "pseudonymization_namespace", required: false, type: "string" },
     { key: "prevalentCondition",  required: true,  type: "string" },
     { key: "sex",                 required: false, type: "string" },
     { key: "birthYear",           required: false, type: "number" },
@@ -1622,7 +1744,7 @@ function matchesSearch(p, q) {
   const s = q.toLowerCase();
   const last = patientLastVisit(p.patientId);
   const lastLDL = last?.ldl ?? "";
-  return [p.patientId, p.prevalentCondition, p.sex, p.birthYear, p.notes, p.comorbidities, lastLDL].some((x) =>
+  return [getPatientDisplayId(p), p.idScheme, p.prevalentCondition, p.sex, p.birthYear, p.notes, p.comorbidities, lastLDL].some((x) =>
     String(x ?? "").toLowerCase().includes(s)
   );
 }
@@ -1659,7 +1781,7 @@ function renderPatientsTable() {
     const lastDate = last?.date ?? "—";
 
     tr.innerHTML = `
-      <td><span class="link" data-open-patient="${p.patientId}">${p.patientId}</span></td>
+      <td><span class="link" data-open-patient="${getPatientDisplayId(p)}">${getPatientDisplayId(p)}</span></td>
       <td>${p.prevalentCondition || "—"}</td>
       <td>${p.sex || "—"}</td>
       <td>${p.birthYear || "—"}</td>
@@ -1688,7 +1810,7 @@ function openPatient(patientId) {
   const p = APP.state.patients.find((x) => x.patientId === patientId);
   if (!p) return;
 
-  $("#d_patientId").textContent = p.patientId;
+  $("#d_patientId").textContent = getPatientDisplayId(p);
   $("#d_condition").textContent = p.prevalentCondition || "—";
   $("#d_sex").textContent = p.sex || "—";
   $("#d_birthYear").textContent = p.birthYear || "—";
@@ -1902,7 +2024,7 @@ function bindModalClose() {
 // ---------------- Create patient ----------------
 
 function resetPatientForm() {
-  $("#p_patientId").value = "";
+  $("#p_originalPatientCode").value = "";
   $("#p_condition").value = "";
   $("#p_sex").value = "";
   $("#p_birthYear").value = "";
@@ -1915,11 +2037,19 @@ function resetPatientForm() {
 }
 
 async function savePatient() {
-  const patientId = $("#p_patientId").value.trim();
+  const originalPatientCode = $("#p_originalPatientCode").value.trim();
   const prevalentCondition = $("#p_condition").value.trim();
-  if (!patientId) return toast("ID pseudónimo obligatorio.");
+  if (!isPseudonymizationActive()) return toast("Clave local de pseudonimización no activa. Actívala antes de crear pacientes nuevos.");
+  if (!originalPatientCode) return toast("Código local/original obligatorio.");
   if (!prevalentCondition) return toast("Patología prevalente obligatoria.");
-  if (/\s/.test(patientId)) return toast("El ID no debe contener espacios.");
+
+  let patientId = "";
+  try {
+    patientId = await generatePatientPseudonym(originalPatientCode);
+  } catch (e) {
+    console.error("[PSEUDONYMIZATION] patient pseudonym generation failed:", e);
+    return toast(e.message || "No se pudo generar el pseudónimo.");
+  }
 
   const birthYear = $("#p_birthYear").value.trim();
   const by = birthYear ? Number(birthYear) : null;
@@ -1933,6 +2063,10 @@ async function savePatient() {
 
   const p = {
     patientId,
+    patient_id: patientId,
+    idScheme: PSEUDONYMIZATION.idScheme,
+    pseudonymizationVersion: PSEUDONYMIZATION.version,
+    pseudonymizationNamespace: PSEUDONYMIZATION.namespace,
     prevalentCondition,
     sex: $("#p_sex").value || null,
     birthYear: by,
@@ -1948,8 +2082,13 @@ async function savePatient() {
   // TODO: persist prevalentCondition/comorbidities/notes/stratVars/CMO score in relational tables
   // (e.g. visits / stratifications / interventions) instead of forcing these app-level fields into patients.
 
-  const exists = APP.state.patients.some((x) => x.patientId === patientId);
-  if (exists) return toast("Ya existe un paciente activo con ese ID.");
+  const exists = APP.state.patients.some((x) => getPatientDisplayId(x) === patientId);
+  if (exists) {
+    toast("Ya existe un paciente con este código pseudonimizado. Se abrirá la ficha existente.");
+    closeModal("modalPatient");
+    openPatient(patientId);
+    return;
+  }
 
   if (!window.supabase) {
     console.error("Supabase client not ready while saving patient.");
@@ -1984,7 +2123,8 @@ async function savePatient() {
     return toast("Tu perfil no tiene centro asignado. Contacta al administrador.");
   }
 
-  const patientRow = buildPatientInsertRow(p, user, profile);
+  const patientsSchema = await loadPatientsSchema();
+  const patientRow = filterPatientRowBySchema(buildPatientInsertRow(p, user, profile), patientsSchema);
   const softDeleteAvailable = await hasPatientsDeletedAtColumn();
 
   // Soft delete aware lookup:
@@ -2004,7 +2144,12 @@ async function savePatient() {
   const existingRow = Array.isArray(existingRows) ? existingRows[0] : existingRows;
 
   if (existingRow && (!softDeleteAvailable || !existingRow.deleted_at)) {
-    return toast("Ya existe un paciente activo con ese ID.");
+    const existingPatient = mapPatientRowToFrontend(existingRow);
+    await loadAll();
+    closeModal("modalPatient");
+    toast("Ya existe un paciente con este código pseudonimizado. Se abrirá la ficha existente.");
+    openPatient(getPatientDisplayId(existingPatient));
+    return;
   }
 
   if (softDeleteAvailable && existingRow && existingRow.deleted_at) {
@@ -2573,7 +2718,11 @@ async function deleteSelectedPatient() {
 
 function patientsForCSV() {
   return APP.state.patients.map((p) => ({
-    patientId: p.patientId,
+    patient_id: getPatientDisplayId(p),
+    patientId: getPatientDisplayId(p),
+    id_scheme: p.idScheme ?? "",
+    pseudonymization_version: p.pseudonymizationVersion ?? "",
+    pseudonymization_namespace: p.pseudonymizationNamespace ?? "",
     prevalentCondition: p.prevalentCondition ?? "",
     sex: p.sex ?? "",
     birthYear: p.birthYear ?? "",
@@ -2649,7 +2798,7 @@ async function exportInterventionsCSV() {
 function downloadPatientsTemplate() {
   const headers = CSV_SCHEMA.patients.map((f) => f.key);
   const example = {
-    patientId: "PCSK9-000001", prevalentCondition: "PCSK9 / Dislipemia",
+    patientId: "RCV-0123456789ABCDE", id_scheme: "pseudonymized_v1", prevalentCondition: "PCSK9 / Dislipemia",
     sex: "M", birthYear: "1972", comorbidities: "DM2; ERC",
     notes: "Observaciones del caso", status: "active", createdAt: "", schemaVersion: "",
   };
@@ -2820,7 +2969,11 @@ async function prepareImportPatientsCSV(file) {
     return toast("Error leyendo archivo. Comprueba la consola.");
   }
   const buildRow = (rec) => ({
-    patientId:          rec.patientId,
+    patientId:          rec.patientId || rec.patient_id,
+    patient_id:         rec.patient_id || rec.patientId,
+    idScheme:           rec.id_scheme || "",
+    pseudonymizationVersion: rec.pseudonymization_version || null,
+    pseudonymizationNamespace: rec.pseudonymization_namespace || null,
     prevalentCondition: rec.prevalentCondition || "",
     sex:                rec.sex || null,
     birthYear:          rec.birthYear ? safeNum(rec.birthYear) : null,
@@ -3028,6 +3181,8 @@ async function loadAll() {
     APP.state.interventions = await dbGetAll(APP.stores.interventions);
     return;
   } else {
+    APP.state.patientsSchema = null;
+    await loadPatientsSchema();
     const softDeleteAvailable = await hasPatientsDeletedAtColumn();
     let patientsQuery = window.supabase
       .from('patients')
@@ -3083,7 +3238,62 @@ function bindNav() {
   $("#ivFilterStatus").addEventListener("change", () => renderInterventions());
 }
 
+function bindPseudonymizationUI() {
+  renderPseudonymizationConfig();
+  const setBtn = $("#btnSetPseudoKey");
+  const clearBtn = $("#btnClearPseudoKey");
+  const searchBtn = $("#btnSearchOriginalCode");
+  if (setBtn && !setBtn.dataset.bound) {
+    setBtn.dataset.bound = "1";
+    setBtn.addEventListener("click", () => {
+      const secret = $("#pseudoKeyInput")?.value || "";
+      const remember = Boolean($("#pseudoRememberSession")?.checked);
+      if (!secret.trim()) return toast("Introduce una clave local de pseudonimización.");
+      setPseudonymizationSecret(secret, remember);
+      if ($("#pseudoKeyInput")) $("#pseudoKeyInput").value = "";
+      toast(remember ? "Clave activa en sessionStorage de esta pestaña." : "Clave activa en memoria de esta sesión.");
+    });
+  }
+  if (clearBtn && !clearBtn.dataset.bound) {
+    clearBtn.dataset.bound = "1";
+    clearBtn.addEventListener("click", () => {
+      setPseudonymizationSecret("", false);
+      toast("Clave local eliminada de memoria/sessionStorage.");
+    });
+  }
+  if (searchBtn && !searchBtn.dataset.bound) {
+    searchBtn.dataset.bound = "1";
+    searchBtn.addEventListener("click", searchByOriginalPatientCode);
+  }
+}
+
+async function searchByOriginalPatientCode() {
+  if (!isPseudonymizationActive()) {
+    toast("Búsqueda por código local no disponible: clave no activa.");
+    return;
+  }
+  const input = $("#originalCodeSearch");
+  const originalCode = input?.value.trim() || "";
+  if (!originalCode) return toast("Introduce un código local/original para buscar.");
+  try {
+    const pseudonym = await generatePatientPseudonym(originalCode);
+    if ($("#patientSearch")) $("#patientSearch").value = pseudonym;
+    renderPatientsTable();
+    const patient = APP.state.patients.find((p) => getPatientDisplayId(p) === pseudonym);
+    if (patient) {
+      toast("Paciente encontrado por pseudónimo local.");
+      openPatient(pseudonym);
+    } else {
+      toast("No se encontró paciente con ese código pseudonimizado.");
+    }
+  } catch (e) {
+    console.error("[PSEUDONYMIZATION] original-code search failed:", e);
+    toast(e.message || "No se pudo buscar por código local.");
+  }
+}
+
 function bindPatientsUI() {
+  bindPseudonymizationUI();
   $("#btnNewPatient").addEventListener("click", () => {
     resetPatientForm();
     openModal("modalPatient");
@@ -3344,6 +3554,7 @@ function initDebugPanel() {
 // ---------------- Init ----------------
 
 async function init() {
+  loadPseudonymizationSecretFromSession();
   APP.state.db = await openDB();
   await loadAll();
   fillConditionSelectors();
